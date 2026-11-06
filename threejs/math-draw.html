@@ -1,0 +1,1983 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Three.js 函数图像绘制工具 - 多函数叠加 · 移动端拖动 · 网格对齐刻度</title>
+    <style>
+        /* ==================== 全局重置 ==================== */
+        /* border-box 让 padding/border 计入 width，简化面板尺寸计算 */
+        * { box-sizing: border-box; }
+        body {
+            /* 取消外边距 + 隐藏滚动条：3D 场景全屏铺满 */
+            margin: 0; overflow: hidden;
+            font-family: "Microsoft YaHei", sans-serif;
+            background: #111;
+        }
+
+        /* ==================== 左上角信息面板 ==================== */
+        /* 仅展示用，不拦截鼠标事件 (pointer-events: none)，避免阻挡 OrbitControls */
+        #info {
+            position: absolute; top: 15px; left: 15px;
+            background: rgba(0,0,0,0.75); color: white;
+            padding: 12px 18px; border-radius: 8px;
+            pointer-events: none; z-index: 5;
+            backdrop-filter: blur(6px);          /* 毛玻璃背景 */
+            border-left: 4px solid #00ffaa;       /* 左侧青色强调条 */
+            max-width: 420px;
+        }
+        #info h2 { margin: 0 0 6px 0; font-size: 17px; }
+        #info p { margin: 3px 0; font-size: 12px; color: #ccc; }
+
+        /* ==================== 右上角帮助面板 ==================== */
+        /* 可折叠面板：默认只露一行标题，展开后显示完整语法说明 */
+        #helpPanel {
+            position: absolute; top: 15px; right: 15px;
+            z-index: 20; width: 400px;
+            background: rgba(20, 25, 35, 0.96);
+            backdrop-filter: blur(12px);
+            border: 1px solid #444; border-radius: 12px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.6);
+            overflow: hidden;
+            transition: max-height 0.3s ease;     /* 折叠动画 */
+            max-height: 60px;                     /* 收起时只露标题行 */
+        }
+        /* 展开状态：高度放开到最多 80vh */
+        #helpPanel.expanded { max-height: 80vh; }
+        #helpHeader {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 14px 18px;
+            background: linear-gradient(135deg, #2a3a4a, #1a2a3a);
+            cursor: pointer; user-select: none;    /* 整行可点击折叠/展开 */
+            border-bottom: 1px solid #00ffaa33;
+        }
+        #helpHeader .title { color: #ffaa00; font-size: 15px; font-weight: bold; letter-spacing: 1px; }
+        #helpHeader .toggle { color: #00ffaa; font-size: 20px; transition: transform 0.3s; }
+        /* 展开时把 ▼ 箭头旋转 180° 变成 ▲ */
+        #helpPanel.expanded #helpHeader .toggle { transform: rotate(180deg); }
+        #helpContent {
+            padding: 16px 18px; color: #ccc; font-size: 12px;
+            line-height: 1.7; overflow-y: auto;    /* 内容过长时内部滚动 */
+            max-height: calc(80vh - 60px);         /* 减去标题行高度 */
+        }
+        #helpContent h3 {
+            color: #00ffaa; margin: 14px 0 6px 0;
+            font-size: 13px; border-bottom: 1px solid #333; padding-bottom: 4px;
+        }
+        #helpContent h3:first-child { margin-top: 0; }   /* 第一个小标题不留上边距 */
+        #helpContent code {
+            color: #00ffaa; background: #1a1a2e;
+            padding: 1px 5px; border-radius: 3px;
+            font-family: 'Courier New', monospace;
+        }
+        #helpContent .warn { color: #ffaa00; }
+        #helpContent table { width: 100%; border-collapse: collapse; margin: 6px 0; }
+        #helpContent td { padding: 4px 6px; border-bottom: 1px solid #2a2a3a; vertical-align: top; }
+        /* 表格第一列：关键字列，青色不换行，固定 90px 宽 */
+        #helpContent td:first-child { color: #00ffaa; white-space: nowrap; width: 90px; }
+
+        /* ==================== 左侧控制面板 ==================== */
+        /* 主操作区：包含绘制类型、样例、公式、范围、分辨率、按钮、状态栏 */
+        #controlPanel {
+            position: absolute; top: 110px; left: 20px;
+            /* 关键修复：用 CSS 自定义属性存尺寸，而不是内联 width/height。
+               这样折叠时 .collapsed 的 width: auto 可以正常覆盖变量默认值，
+               拖动调整过的尺寸也不会"锁死"面板无法收缩。 */
+            width: var(--panel-width, 500px);
+            height: var(--panel-height, auto);
+            background: rgba(25, 25, 35, 0.94);
+            backdrop-filter: blur(12px);
+            border: 1px solid #444; border-radius: 12px;
+            box-shadow: 0 12px 40px rgba(0,0,0,0.6);
+            z-index: 30; display: flex; flex-direction: column;
+            overflow: hidden; min-width: 400px; min-height: 450px;
+        }
+        /* 面板标题栏：可拖动移动整块面板 */
+        #panelHeader {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 10px 14px;
+            background: linear-gradient(135deg, #1e3c3c, #1a2a2a);
+            border-bottom: 1px solid #00ffaa33;
+            cursor: move; user-select: none; flex-shrink: 0;   /* move 光标提示可拖 */
+            /* 移动端：禁止浏览器默认手势（滚动/缩放），否则 touchmove 无法阻止页面滚动 */
+            touch-action: none;
+        }
+        #panelHeader .title { color: #00ffaa; font-size: 14px; font-weight: bold; letter-spacing: 1px; }
+        #panelHeader .controls { display: flex; gap: 8px; align-items: center; }
+        #panelHeader .hint { font-size: 10px; color: #666; }
+        /* 折叠按钮：小尺寸，悬停加深 */
+        #collapseBtn {
+            background: rgba(0,255,170,0.15);
+            border: 1px solid #00ffaa55;
+            color: #00ffaa; border-radius: 4px;
+            padding: 2px 8px; font-size: 12px;
+            cursor: pointer; transition: 0.2s;
+        }
+        #collapseBtn:hover { background: rgba(0,255,170,0.3); }
+        /* 面板主体：垂直排列各字段，超出时内部滚动 */
+        #panelBody {
+            padding: 14px; display: flex; flex-direction: column;
+            gap: 11px; flex: 1; overflow: auto;
+        }
+        /* 字段：标签 + 控件的垂直组合 */
+        .field { display: flex; flex-direction: column; gap: 5px; }
+        .field label { font-size: 12px; color: #999; letter-spacing: 0.5px; }
+        .field select, .field input[type="number"] {
+            padding: 8px 10px; border-radius: 6px; border: 1px solid #444;
+            background: #1a1a22; color: #fff; font-size: 14px; outline: none;
+        }
+        /* 聚焦时边框变青色，给用户明确焦点反馈 */
+        .field select:focus, .field input[type="number"]:focus { border-color: #00ffaa; }
+        /* 字段行：让两个 field 横向并排（范围 + 分辨率） */
+        .field-row { display: flex; gap: 10px; }
+        .field-row .field { flex: 1; }
+        /* 公式输入框：等宽字体 + 青色文字，可垂直拉伸 */
+        #formula {
+            width: 100%; padding: 10px 12px; border-radius: 6px;
+            border: 1px solid #444; background: #0e0e14; color: #00ffaa;
+            font-size: 14px; font-family: 'Courier New', monospace;
+            outline: none; resize: vertical; min-height: 80px;
+            max-height: 360px; line-height: 1.5; transition: border-color 0.2s;
+        }
+        #formula:focus { border-color: #00ffaa; box-shadow: 0 0 12px rgba(0,255,170,0.15); }
+        /* 绘制按钮：主操作，青色实心 + 阴影 + 悬停上浮动效 */
+        #drawBtn {
+            padding: 11px 16px; background: #00ffaa; border: none;
+            border-radius: 8px; color: #111; font-weight: bold; font-size: 15px;
+            cursor: pointer; letter-spacing: 1px; transition: 0.2s;
+            box-shadow: 0 4px 15px rgba(0,255,170,0.25); flex-shrink: 0;
+        }
+        #drawBtn:hover { background: #33ffbb; transform: translateY(-1px); }
+        #drawBtn:active { transform: translateY(0); }
+        /* 状态栏：显示绘制结果/错误/诊断信息，等宽字体可选中复制 */
+        #status {
+            font-size: 11px; color: #888; text-align: left;
+            padding: 10px 12px; border-top: 1px solid #333; flex-shrink: 0;
+            min-height: 70px; line-height: 1.5; white-space: pre-wrap;   /* 保留换行 */
+            font-family: 'Courier New', monospace;
+            background: #0a0a12; border-radius: 0 0 12px 12px;
+            user-select: text; cursor: text;
+            overflow-y: auto; max-height: 240px;
+        }
+        /* 状态栏三种语义颜色：成功 / 错误 / 警告 */
+        #status.ok { color: #00ffaa; }
+        #status.err { color: #ff6666; }
+        #status.warn { color: #ffaa00; }
+        #status::before { content: '▸ '; color: #666; }   /* 行首小箭头装饰 */
+        /* 右下角 resize 手柄：斜向渐变模拟拖拽角 */
+        #resizeHandle {
+            position: absolute; right: 2px; bottom: 2px;
+            width: 16px; height: 16px; cursor: nwse-resize; z-index: 31;
+            background: linear-gradient(135deg, transparent 50%, #00ffaa 50%);
+            border-radius: 0 0 4px 0; opacity: 0.6;
+            /* 移动端：禁止浏览器默认手势 */
+            touch-action: none;
+        }
+        #resizeHandle:hover { opacity: 1; }
+
+        /* ==================== 折叠状态 ==================== */
+        /* 关键：折叠时切换为 inline-flex，宽度 shrink-to-fit 到标题栏内容；
+           width/height 用 !important 强制覆盖 --panel-width 变量，
+           这样无论用户之前拖动调整过多大的尺寸，折叠时都能正确收缩。 */
+        #controlPanel.collapsed {
+            display: inline-flex;                /* inline-flex 才会 shrink-to-fit */
+            width: auto !important;              /* 强制覆盖 CSS 变量的 width */
+            height: auto !important;             /* 强制覆盖 CSS 变量的 height */
+            min-width: 0;                        /* 解除 400px 最小宽度 */
+            min-height: 0;                       /* 解除 450px 最小高度 */
+            max-width: 90vw;                     /* 防止超出视口 */
+        }
+        /* 折叠时隐藏 "拖动标题栏移动" 提示，让标题栏更紧凑 */
+        #controlPanel.collapsed #panelHeader .hint {
+            display: none;
+        }
+        /* 折叠时隐藏主体、状态栏、resize 手柄，只留标题行 */
+        #controlPanel.collapsed #panelBody,
+        #controlPanel.collapsed #status,
+        #controlPanel.collapsed #resizeHandle { display: none; }
+    </style>
+</head>
+<body>
+    <!-- 左上角：工具简介信息（不可交互） -->
+    <div id="info">
+        <h2>📐 函数图像绘制工具</h2>
+        <p>坐标系: <b>X水平 · Y水平 · Z垂直(向上)</b></p>
+        <p>支持: 多函数逗号分隔叠加 · 隐函数/显式 · 网格对齐刻度 · 移动端拖动</p>
+    </div>
+
+    <!-- 右上角帮助面板：可折叠的语法说明 -->
+    <div id="helpPanel">
+        <div id="helpHeader">
+            <span class="title">📖 使用帮助 & 语法说明</span>
+            <span class="toggle">▼</span>
+        </div>
+        <div id="helpContent">
+            <h3>🎯 基本用法</h3>
+            <p>1. 选择「绘制类型」<br>
+               2. 从「样例」下拉选一个，或手动输入公式<br>
+               3. 调整「范围 ±R」和「分辨率」<br>
+               4. 点击「绘制图像」<br>
+               5. 鼠标左键旋转、滚轮缩放、右键平移</p>
+
+            <h3>🆕 多函数叠加</h3>
+            <p>在公式框里用 <b>逗号</b> 分隔多个函数，会叠加绘制到同一场景中，<br>
+               每个函数自动分配不同颜色。<br><br>
+               示例：<code>x^2+y^2=4, x^2+y^2=9, x^2+y^2=16</code>（三个同心圆）<br>
+               示例：<code>sin(x), cos(x), tan(x)</code>（三条曲线）<br><br>
+               <span class="warn">注意：</span>逗号分割只识别**括号外的逗号**，<br>
+               例如 <code>log(10,x)</code> 内的逗号不会被当成函数分隔。</p>
+
+            <h3>📌 绘制类型说明</h3>
+            <table>
+                <tr><td>二维隐函数</td><td>F(x,y)=0 的等值线，在 XY 平面绘制</td></tr>
+                <tr><td>显式曲线</td><td>y=f(x) 的曲线，在 XY 平面绘制</td></tr>
+                <tr><td>显式曲面</td><td>z=f(x,y) 的曲面，在三维空间绘制</td></tr>
+                <tr><td>三维隐函数</td><td>F(x,y,z)=0 的等值面，Marching Cubes 提取</td></tr>
+            </table>
+
+            <h3>✏️ 输入语法</h3>
+            <table>
+                <tr><td>基本运算</td><td><code>+ - * / ^</code> 或 <code>**</code> 表示幂</td></tr>
+                <tr><td>隐式乘法</td><td><code>2x</code> → <code>2*x</code>，<code>xy</code> → <code>x*y</code></td></tr>
+                <tr><td>三角函数</td><td><code>sin cos tan asin acos atan</code></td></tr>
+                <tr><td>对数</td><td><code>ln(x)</code>、<code>log(x)</code>、<code>log(10,x)</code>、<code>logb(b,x)</code></td></tr>
+                <tr><td>指数</td><td><code>exp(x)</code> 或 <code>e^x</code></td></tr>
+                <tr><td>绝对值</td><td><code>|x|</code></td></tr>
+                <tr><td>多函数</td><td><code>f1, f2, f3</code>（逗号分隔，顶层）</td></tr>
+            </table>
+
+            <h3 class="warn">⚠️ 注意事项</h3>
+            <table>
+                <tr><td>网格与刻度</td><td>网格格子 = 刻度间隔，范围 &lt; 10 时格子 = 1 单位</td></tr>
+                <tr><td>环面参数</td><td><code>(x²+y²+z²+R²-r²)²=4R²(x²+y²)</code> 需 R>r</td></tr>
+                <tr><td>正切函数</td><td>有奇点，建议分辨率 ≥ 250</td></tr>
+                <tr><td>多函数曲面</td><td>多个曲面用半透明纯色叠加，避免颜色干扰</td></tr>
+                <tr><td>移动端</td><td>手指按住标题栏拖动面板，按住右下角手柄调整大小</td></tr>
+            </table>
+        </div>
+    </div>
+
+    <!-- 左侧控制面板：主操作区 -->
+    <div id="controlPanel">
+        <!-- 标题栏（可拖动，支持鼠标和触摸） -->
+        <div id="panelHeader">
+            <span class="title">⚙️ 函数控制台</span>
+            <div class="controls">
+                <span class="hint">拖动标题栏移动</span>
+                <button id="collapseBtn" title="折叠/展开面板">折叠</button>
+            </div>
+        </div>
+        <!-- 主体：所有输入字段 -->
+        <div id="panelBody">
+            <!-- 绘制类型选择：决定走哪个绘制函数 -->
+            <div class="field">
+                <label>📌 绘制类型</label>
+                <select id="funcType">
+                    <option value="implicit" selected>二维隐函数 F(x,y)=0</option>
+                    <option value="plane">显式曲线 y=f(x)</option>
+                    <option value="surface">显式曲面 z=f(x,y)</option>
+                    <option value="implicit3d">三维隐函数 F(x,y,z)=0</option>
+                </select>
+            </div>
+
+            <!-- 样例下拉：选一项后自动填充类型+公式并触发绘制 -->
+            <!-- value 格式为 "类型:::公式"，用 ::: 分隔因为公式里可能含冒号 -->
+            <div class="field">
+                <label>🎯 样例 (选择后自动填充并绘制)</label>
+                <select id="sampleSelect">
+                    <option value="">-- 选择样例 --</option>
+
+                    <!-- 显式曲线 y=f(x) 类样例 -->
+                    <optgroup label="📈 高中常见曲线 (显式)">
+                        <option value="plane:::2*x+1">一次函数 y=2x+1</option>
+                        <option value="plane:::x^2-2*x+1">二次函数 y=x²-2x+1</option>
+                        <option value="plane:::1/x">反比例 y=1/x</option>
+                        <option value="plane:::2^x">指数 y=2^x</option>
+                        <option value="plane:::e^x">指数 y=e^x</option>
+                        <option value="plane:::ln(x)">对数 y=ln(x)</option>
+                        <option value="plane:::log(x)">常用对数 y=log(x)</option>
+                        <option value="plane:::sin(x)">正弦 y=sin(x)</option>
+                        <option value="plane:::cos(x)">余弦 y=cos(x)</option>
+                        <option value="plane:::tan(x)">正切 y=tan(x)</option>
+                        <option value="plane:::abs(x)">绝对值 y=|x|</option>
+                        <option value="plane:::sqrt(x)">平方根 y=√x</option>
+                        <option value="plane:::x^3-3*x">三次函数 y=x³-3x</option>
+                        <option value="plane:::sin(x)/x">sinc y=sin(x)/x</option>
+                        <!-- 多函数样例 -->
+                        <option value="plane:::sin(x), cos(x), sin(2*x)">正弦叠加 sin(x), cos(x), sin(2x)</option>
+                        <option value="plane:::x, x^2, x^3">幂函数叠加 x, x², x³</option>
+                    </optgroup>
+
+                    <!-- 二维隐函数 F(x,y)=0 类样例 -->
+                    <optgroup label="⭕ 高中常见曲线 (隐式)">
+                        <option value="implicit:::x^2+y^2=4">圆 x²+y²=4</option>
+                        <option value="implicit:::x^2/4+y^2/9=1">椭圆 x²/4+y²/9=1</option>
+                        <option value="implicit:::x^2-y^2=1">双曲线 x²-y²=1</option>
+                        <option value="implicit:::y^2=x">抛物线 y²=x</option>
+                        <option value="implicit:::y=x^2">抛物线 y=x²</option>
+                        <option value="implicit:::x*y=1">双曲线 xy=1</option>
+                        <option value="implicit:::sin(x)*cos(y)=0.5">三角隐式 sin(x)cos(y)=0.5</option>
+                        <!-- 多函数样例 -->
+                        <option value="implicit:::x^2+y^2=1, x^2+y^2=4, x^2+y^2=9">同心圆 x²+y²=1,4,9</option>
+                    </optgroup>
+
+                    <!-- 进阶隐函数：含指数/对数/正切组合，部分为离散解集 -->
+                    <optgroup label="🔬 进阶隐函数">
+                        <option value="implicit:::y=e^cos(x)">指数余弦 y=e^cos(x)</option>
+                        <option value="implicit:::y=e^cos(yx)">隐式指数余弦 y=e^cos(yx)</option>
+                        <option value="implicit:::log(x)=tan(xy)">对数-正切 log(x)=tan(xy)</option>
+                        <option value="implicit:::sin(x)*sin(y)=1">离散解集 sin(x)sin(y)=1 (近似模式)</option>
+                        <option value="implicit:::|sin(x^2+2xy)|=sin(x-2y)">绝对值方程 |sin(x²+2xy)|=sin(x-2y)</option>
+                        <option value="implicit:::ln(x^y)+cos(y^x)=1">超越方程</option>
+                        <option value="implicit:::tan(x^2+y^2)=1">正切圆环 (建议范围4, 分辨率250)</option>
+                    </optgroup>
+
+                    <!-- 显式曲面 z=f(x,y) 类样例 -->
+                    <optgroup label="🌊 显式曲面">
+                        <option value="surface:::sin(x)+sin(y)">波浪 z=sin(x)+sin(y)</option>
+                        <option value="surface:::sin(x)*cos(y)">波浪 z=sin(x)cos(y)</option>
+                        <option value="surface:::sin(x+y)">倾斜波 z=sin(x+y)</option>
+                        <option value="surface:::sin(x*y)">乘积波 z=sin(xy)</option>
+                        <option value="surface:::sin(x^2)+sin(y^2)">双正弦 z=sin(x²)+sin(y²)</option>
+                        <option value="surface:::exp(-(x^2+y^2))">高斯曲面 z=e^(-x²-y²)</option>
+                        <option value="surface:::x^2+y^2">抛物面 z=x²+y²</option>
+                        <option value="surface:::x^2-y^2">双曲抛物面 z=x²-y²</option>
+                        <option value="surface:::sqrt(x^2+y^2)">圆锥 z=√(x²+y²)</option>
+                        <option value="surface:::z(x,y)=sin(x)+sin(y)">带声明 z(x,y)=sin(x)+sin(y)</option>
+                        <option value="surface:::sin(x⋅y)">Unicode乘号 sin(x⋅y)</option>
+                        <!-- 多函数样例 -->
+                        <option value="surface:::x^2+y^2, x^2+y^2-1, x^2+y^2-2">多层抛物面叠加</option>
+                    </optgroup>
+
+                    <!-- 三维隐函数 F(x,y,z)=0 类样例：用 Marching Cubes 提取等值面 -->
+                    <optgroup label="🔮 三维隐函数 (闭合曲面)">
+                        <option value="implicit3d:::x^2+y^2+z^2=4">球体 x²+y²+z²=4</option>
+                        <option value="implicit3d:::x^2/4+y^2/9+z^2=1">椭球</option>
+                        <option value="implicit3d:::(x^2+y^2+z^2+0.75)^2=4*(x^2+y^2)">标准环面 (R=1, r=0.5)</option>
+                        <option value="implicit3d:::x^2+y^2-z^2=1">单叶双曲面</option>
+                        <option value="implicit3d:::x^2+y^2=z^2">双圆锥</option>
+                        <option value="implicit3d:::x^2+y^2+z=1">旋转抛物面 z=1-x²-y²</option>
+                        <option value="implicit3d:::w(x,y,z)=sin(x^2)+sin(y^2)+sin(z^2)">四维函数 w(x,y,z) (固定 w=0)</option>
+                        <option value="implicit3d:::z=log(x)-tan(xy)">三维化 z=log(x)-tan(xy)</option>
+                        <option value="implicit3d:::z=sin(x)+sin(y)">三维化 z=sin(x)+sin(y)</option>
+                        <!-- 多函数样例 -->
+                        <option value="implicit3d:::x^2+y^2+z^2=1, x^2+y^2+z^2=4">同心球 x²+y²+z²=1,4</option>
+                    </optgroup>
+                </select>
+            </div>
+
+            <!-- 公式输入：支持隐式乘法、^幂、|绝对值|、e^x、ln/log、多函数逗号分隔 -->
+            <div class="field">
+                <label>✏️ 公式 / 方程 (逗号分隔可叠加，可拉伸)</label>
+                <textarea id="formula" rows="3" spellcheck="false">x^2+y^2=4</textarea>
+            </div>
+
+            <!-- 范围 ±R 与 分辨率 并排 -->
+            <div class="field-row">
+                <div class="field">
+                    <label>📏 范围 ±R</label>
+                    <!-- R 决定采样区间 [-R, R]，同时驱动坐标轴/网格重建 -->
+                    <input type="number" id="rangeInput" value="6" min="0.5" max="100" step="1">
+                </div>
+                <div class="field">
+                    <label>🔬 分辨率</label>
+                    <!-- 分辨率 = 每边采样格数，越大越精细但越慢 -->
+                    <input type="number" id="resInput" value="200" min="20" max="300" step="10">
+                </div>
+            </div>
+
+            <!-- 绘制按钮：触发 draw() 主流程 -->
+            <button id="drawBtn">绘制图像</button>
+            <!-- 状态栏：显示成功/警告/错误 + 诊断信息（可选中复制） -->
+            <div id="status" class="ok">就绪 — 状态栏文字可选中复制</div>
+        </div>
+        <!-- 右下角拖拽手柄：调整面板宽高（支持鼠标和触摸） -->
+        <div id="resizeHandle"></div>
+    </div>
+
+    <!-- importmap：把 bare specifier "three" 映射到 CDN 的 ES Module URL -->
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.128.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.128.0/examples/jsm/"
+            }
+        }
+    </script>
+    <script type="module">
+        // 引入 Three.js 核心 + OrbitControls（相机轨道控制）+ CSS2DRenderer（HTML 标签渲染）
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+
+        // ==================== 场景初始化 ====================
+        // Scene：所有 3D 对象的容器
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x111122);   // 深蓝黑背景
+
+        // PerspectiveCamera：透视相机 (FOV=45°, 近平面0.1, 远平面1000)
+        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(6, 4, 6);                   // 初始相机位置
+        camera.up.set(0, 0, 1);                         // Z 轴垂直向上（数学坐标系，非 Three.js 默认的 Y 向上）
+        camera.lookAt(0, 0, 0);
+
+        // WebGLRenderer：主渲染器，开启抗锯齿
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(window.devicePixelRatio); // 适配高 DPI 屏
+        document.body.appendChild(renderer.domElement);
+
+        // CSS2DRenderer：把 CSS2DObject 的 DOM 节点叠加渲染到 3D 坐标对应位置
+        // 用于绘制坐标轴字母（X/Y/Z）和刻度数字
+        const labelRenderer = new CSS2DRenderer();
+        labelRenderer.setSize(window.innerWidth, window.innerHeight);
+        labelRenderer.domElement.style.position = 'absolute';
+        labelRenderer.domElement.style.top = '0px';
+        labelRenderer.domElement.style.left = '0px';
+        labelRenderer.domElement.style.pointerEvents = 'none';   // 不阻挡 OrbitControls
+        document.body.appendChild(labelRenderer.domElement);
+
+        // OrbitControls：鼠标左键旋转、滚轮缩放、右键平移；手机端单指旋转、双指缩放
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;          // 开启阻尼惯性，旋转更顺滑
+        controls.dampingFactor = 0.05;
+        controls.target.set(0, 0, 0);           // 围绕原点旋转
+        controls.object.up.set(0, 0, 1);        // 与 camera.up 保持一致
+
+        // ==================== 灯光 ====================
+        // 环境光：整体基底亮度，避免阴影区全黑
+        scene.add(new THREE.AmbientLight(0x606080));
+        // 主方向光：从右上前方打来，强度 1.2
+        const dirLight1 = new THREE.DirectionalLight(0xffffff, 1.2);
+        dirLight1.position.set(2, 3, 4); scene.add(dirLight1);
+        // 辅助方向光：暖色调，从左侧补光，增强立体感
+        const dirLight2 = new THREE.DirectionalLight(0xffaa88, 0.7);
+        dirLight2.position.set(-3, 1, 2); scene.add(dirLight2);
+        // 点光源：蓝色，近距离补色，让金属反光更丰富
+        const pointLight = new THREE.PointLight(0x4466ff, 0.6, 20);
+        pointLight.position.set(2, 3, 4); scene.add(pointLight);
+
+        // ==================== 多函数调色板 ====================
+        // 输入多个函数时，按索引循环取色，让每条曲线/曲面明显区分
+        const COLOR_PALETTE = [
+            0x00ffaa,  // 青绿
+            0xff66aa,  // 粉红
+            0x66ccff,  // 天蓝
+            0xffee44,  // 黄
+            0xcc66ff,  // 紫
+            0xff8844,  // 橙
+            0x44ff44,  // 亮绿
+            0xff4444,  // 红
+        ];
+
+        /**
+         * 按顶层逗号分割字符串（忽略括号内的逗号）
+         * 例如：
+         *   "sin(x), log(10,x), x^2" → ["sin(x)", "log(10,x)", "x^2"]
+         *   "x^2+y^2=1, x^2+y^2=4"   → ["x^2+y^2=1", "x^2+y^2=4"]
+         *
+         * 算法：扫描字符，维护括号深度，
+         *   只在 depth===0 且字符为 ',' 时切分
+         *
+         * @param {string} s - 待分割字符串
+         * @returns {string[]} - 各函数表达式（已 trim，跳过空项）
+         */
+        function splitByTopLevelComma(s) {
+            const result = [];
+            let depth = 0;
+            let current = '';
+            for (let i = 0; i < s.length; i++) {
+                const ch = s[i];
+                if (ch === '(') depth++;
+                else if (ch === ')') depth--;
+                else if (ch === ',' && depth === 0) {
+                    if (current.trim()) result.push(current.trim());
+                    current = '';
+                    continue;
+                }
+                current += ch;
+            }
+            if (current.trim()) result.push(current.trim());
+            return result;
+        }
+
+        // ==================== 动态坐标轴、网格与刻度 ====================
+        // axesGroup 持有当前所有坐标轴元素；每次范围变化时整体重建
+        let axesGroup = null;
+
+        /**
+         * 计算刻度间隔：根据范围 R 自动选择美观的间隔
+         *
+         * 目标：
+         *   - range ≤ 10 时，tickStep = 1（一个格子 = 1 单位）
+         *   - range 更大时，tickStep 递增为 2, 5, 10, 20...（避免格子太密）
+         *
+         * 核心公式：idealStep = range / 4（每边约 4 个刻度）
+         * 然后规整到"美观"数值：1, 2, 5, 10（乘以 10 的量级）
+         *
+         * @param {number} range - 范围 ±R
+         * @returns {number} - 刻度间隔（同时是网格格子大小）
+         */
+        function computeTickStep(range) {
+            // 每边约 4 个刻度的理想步长
+            const idealStep = range / 4;
+            // 取 idealStep 的量级（0.01, 0.1, 1, 10, 100...）
+            const magnitude = Math.pow(10, Math.floor(Math.log10(idealStep)));
+            // 归一化到 1~10 之间
+            const normalized = idealStep / magnitude;
+            // 规整到"美观"数值
+            let niceStep;
+            // 阈值推导：idealStep = range/4，normalized = idealStep/magnitude
+            // normalized < 2.5 等价于 range/4 < 2.5，即 range < 10
+            // （注意是严格小于：range = 10 时 normalized = 2.5，会落到下面的 branch 取 2）
+            if (normalized < 2.5) niceStep = 1;      // range < 10 → step = 1
+            else if (normalized < 5) niceStep = 2;
+            else if (normalized < 8) niceStep = 5;
+            else niceStep = 10;
+            return niceStep * magnitude;
+        }
+
+        /**
+         * 根据范围 R 重建坐标轴、网格、刻度数值、标签
+         * 每次绘制前都会调用，确保坐标系统与当前范围匹配
+         * @param {number} range - 范围 ±R
+         */
+        function rebuildAxes(range) {
+            // 1. 清除旧坐标轴组：先移除 CSS2DObject 的 DOM 节点，再释放几何/材质，最后从场景移除
+            if (axesGroup) {
+                // 关键：手动移除 CSS2DObject 的 DOM 节点，避免累积
+                axesGroup.traverse(obj => {
+                    if (obj.isCSS2DObject && obj.element && obj.element.parentNode) {
+                        obj.element.parentNode.removeChild(obj.element);
+                    }
+                });
+                scene.remove(axesGroup);
+                // 释放 GPU 资源：geometry 与 material 都要 dispose
+                axesGroup.traverse(obj => {
+                    if (obj.geometry) obj.geometry.dispose();
+                    if (obj.material) {
+                        if (Array.isArray(obj.material)) obj.material.forEach(m => m.dispose());
+                        else obj.material.dispose();
+                    }
+                });
+            }
+            axesGroup = new THREE.Group();
+
+            // ==================== 2. 计算刻度间隔 ====================
+            // tickStep 同时用于刻度和网格，确保两者对齐
+            const tickStep = computeTickStep(range);
+
+            // ==================== 3. 网格（格子大小 ≈ tickStep，与刻度近似对齐） ====================
+            const gridSize = range * 2;
+            // divisions = 格子数 = gridSize / tickStep
+            // GridHelper 会把 gridSize 均分成 divisions 份，每格宽度 = gridSize / divisions
+            // 由于 divisions 经过 round + clamp，这个宽度只是"接近" tickStep，
+            // 不一定精确相等（例如 range=6, tickStep=1 时 gridSize/divisions 恰好 = 1；
+            // 但 range=7 时 gridSize=14，gridSize/tickStep=7，仍精确；range=9 时 tickStep=2，
+            // gridSize=18，divisions=9，每格 = 2，也精确。一般情况存在少量残差，故为"近似对齐"）
+            let divisions = Math.round(gridSize / tickStep);
+            // 保护：至少 2 格，最多 200 格（避免极端情况渲染卡顿）
+            divisions = Math.max(2, Math.min(200, divisions));
+            const gridHelper = new THREE.GridHelper(gridSize, divisions, 0x88aaff, 0x445588);
+            // GridHelper 默认在 XZ 平面，旋转 90° 到 XY 平面（数学中 z=0 平面）
+            gridHelper.rotation.x = Math.PI / 2;
+            axesGroup.add(gridHelper);
+
+            // ==================== 4. 坐标轴轴线 + 箭头 ====================
+            // 数学作图惯例：轴线从 -R 贯穿到 +R，正端带箭头。
+            // ArrowHelper 只从 origin 向 dir 方向画 length 长，只覆盖正半轴；
+            // 而 Z 轴的负半轴不在网格平面上（网格在 z=0），若不补负段就只剩刻度、
+            // 没有轴线相连。因此这里用一条 -R..+R 的完整实线做轴线，再在正端加箭头。
+            const axisLen = range * 1.15;
+            const hl = Math.max(0.15, axisLen * 0.04);   // 箭头长度
+            const hw = Math.max(0.1, axisLen * 0.025);   // 箭头宽度
+            // 三根轴的配置：方向、正端颜色、负端颜色（负端略暗，仍保留轴线存在感）
+            const axisDefs = [
+                { dir: new THREE.Vector3(1,0,0), posColor: 0xff5555, negColor: 0x882222 }, // X 红
+                { dir: new THREE.Vector3(0,1,0), posColor: 0x55ff55, negColor: 0x228822 }, // Y 绿
+                { dir: new THREE.Vector3(0,0,1), posColor: 0x5555ff, negColor: 0x222288 }, // Z 蓝
+            ];
+            axisDefs.forEach(({ dir, posColor, negColor }) => {
+                // 负半轴实线：从 -axisLen*dir 到原点（-R 稍超出为 -1.15R，与正端对称）
+                const negEnd = dir.clone().multiplyScalar(-axisLen);
+                axesGroup.add(new THREE.Line(
+                    new THREE.BufferGeometry().setFromPoints([negEnd, new THREE.Vector3(0,0,0)]),
+                    new THREE.LineBasicMaterial({ color: negColor })
+                ));
+                // 正半轴 + 箭头（ArrowHelper 自带正段轴线）
+                axesGroup.add(new THREE.ArrowHelper(dir, new THREE.Vector3(0,0,0), axisLen, posColor, hl, hw));
+            });
+
+            // ==================== 5. 坐标轴末端标签 ====================
+            // 用 CSS2DObject 在各轴末端显示 X/Y/Z 字母
+            const makeLabel = (text, color, position, fontSize) => {
+                const div = document.createElement('div');
+                div.textContent = text;
+                div.style.color = color;
+                div.style.fontSize = `${fontSize}px`;
+                div.style.fontWeight = 'bold';
+                div.style.textShadow = '1px 1px 2px black';   // 黑色描边，保证在亮色背景上可读
+                const label = new CSS2DObject(div);
+                label.position.copy(position);
+                axesGroup.add(label);
+            };
+            const labelOffset = axisLen * 1.05;                       // 标签放在轴末端外侧
+            const labelFontSize = Math.max(16, Math.min(28, range * 2.5));  // 字号随范围自适应
+            makeLabel('X', '#ff5555', new THREE.Vector3(labelOffset, 0, 0), labelFontSize);
+            makeLabel('Y', '#55ff55', new THREE.Vector3(0, labelOffset, 0), labelFontSize);
+            makeLabel('Z', '#5555ff', new THREE.Vector3(0, 0, labelOffset), labelFontSize);
+
+            // ==================== 6. 坐标轴刻度数值 ====================
+            const tickFontSize = Math.max(10, Math.min(16, range * 1.2));
+            const tickLen = range * 0.03;                             // 刻度线半长
+            // 标签距离轴心的偏移（随 range 自适应，但不超过 range 的 8%）
+            const tickLabelOffset = Math.min(tickLen * 4, range * 0.08);
+
+            /**
+             * 在指定轴上添加刻度线和数值标签
+             * 使用 tickStep 作为步长，与网格格子大小一致 → 刻度与网格对齐
+             * @param {'x'|'y'|'z'} axis - 要标注的轴
+             * @param {number} step - 刻度步长（= tickStep）
+             */
+            const addAxisTicks = (axis, step) => {
+                // 共享材质，避免每个刻度新建
+                const tickMat = new THREE.LineBasicMaterial({ color: 0xaaaaaa });
+                // 整数循环 k，v = k*step，避免浮点累加误差
+                const kStart = Math.ceil(-range / step);
+                const kEnd = Math.floor(range / step);
+                for (let k = kStart; k <= kEnd; k++) {
+                    if (k === 0) continue; // 0 单独在 X 轴标注，避免三轴原点重叠
+                    const v = k * step;
+                    if (Math.abs(v) > range + 1e-9) continue;   // 越界保护
+
+                    // 当前刻度在轴上的位置，以及该位置处十字刻度线的两个方向
+                    // （每个轴取"与自身垂直的另外两个轴方向"作为十字两条边：
+                    //   X 轴 → 沿 Y、Z；Y 轴 → 沿 X、Z；Z 轴 → 沿 X、Y）
+                    let pos, tickDir1, tickDir2;
+                    if (axis === 'x') {
+                        pos = new THREE.Vector3(v, 0, 0);
+                        tickDir1 = new THREE.Vector3(0, tickLen, 0);   // 沿 Y 方向
+                        tickDir2 = new THREE.Vector3(0, 0, tickLen);   // 沿 Z 方向
+                    } else if (axis === 'y') {
+                        pos = new THREE.Vector3(0, v, 0);
+                        tickDir1 = new THREE.Vector3(tickLen, 0, 0);   // 沿 X 方向
+                        tickDir2 = new THREE.Vector3(0, 0, tickLen);   // 沿 Z 方向
+                    } else {
+                        pos = new THREE.Vector3(0, 0, v);
+                        tickDir1 = new THREE.Vector3(tickLen, 0, 0);   // 沿 X 方向
+                        tickDir2 = new THREE.Vector3(0, tickLen, 0);   // 沿 Y 方向
+                    }
+
+                    // 刻度线（十字形：pos ± tickDir1，pos ± tickDir2）
+                    const tickGeom1 = new THREE.BufferGeometry().setFromPoints([
+                        pos.clone().sub(tickDir1), pos.clone().add(tickDir1)
+                    ]);
+                    const tickGeom2 = new THREE.BufferGeometry().setFromPoints([
+                        pos.clone().sub(tickDir2), pos.clone().add(tickDir2)
+                    ]);
+                    axesGroup.add(new THREE.Line(tickGeom1, tickMat));
+                    axesGroup.add(new THREE.Line(tickGeom2, tickMat));
+
+                    // 数值格式化：接近整数就显示整数，否则保留 1 位小数
+                    const labelText = Math.abs(v - Math.round(v)) < 1e-9
+                        ? String(Math.round(v))
+                        : v.toFixed(1);
+
+                    // 标签放在轴外侧（负方向偏移），避免压住轴线
+                    let tickLabelPos;
+                    if (axis === 'x') tickLabelPos = new THREE.Vector3(v, -tickLabelOffset, 0);
+                    else if (axis === 'y') tickLabelPos = new THREE.Vector3(-tickLabelOffset, v, 0);
+                    else tickLabelPos = new THREE.Vector3(-tickLabelOffset, 0, v);
+
+                    const tickDiv = document.createElement('div');
+                    tickDiv.textContent = labelText;
+                    tickDiv.style.color = '#cccccc';
+                    tickDiv.style.fontSize = `${tickFontSize}px`;
+                    tickDiv.style.fontFamily = 'monospace';
+                    tickDiv.style.textShadow = '1px 1px 2px black';
+                    tickDiv.style.opacity = '0.9';
+                    const tickLabel = new CSS2DObject(tickDiv);
+                    tickLabel.position.copy(tickLabelPos);
+                    axesGroup.add(tickLabel);
+                }
+
+                // 原点 0 只在 X 轴标注一次（放在 X 负方向、Y 负方向的象限角，避免与轴重叠）
+                if (axis === 'x') {
+                    const zeroDiv = document.createElement('div');
+                    zeroDiv.textContent = '0';
+                    zeroDiv.style.color = '#cccccc';
+                    zeroDiv.style.fontSize = `${tickFontSize}px`;
+                    zeroDiv.style.fontFamily = 'monospace';
+                    zeroDiv.style.textShadow = '1px 1px 2px black';
+                    zeroDiv.style.opacity = '0.9';
+                    const zeroLabel = new CSS2DObject(zeroDiv);
+                    zeroLabel.position.set(-tickLabelOffset, -tickLabelOffset, 0);
+                    axesGroup.add(zeroLabel);
+                }
+            };
+
+            addAxisTicks('x', tickStep);
+            addAxisTicks('y', tickStep);
+            addAxisTicks('z', tickStep);
+
+            // ==================== 7. 添加到场景 + 相机自适应 ====================
+            scene.add(axesGroup);
+            // 相机距离随 range 增大而拉远，保证整个坐标范围可见
+            const camDist = Math.max(6, range * 2.2);
+            camera.position.set(camDist, camDist * 0.7, camDist);
+            camera.lookAt(0, 0, 0);
+            controls.target.set(0, 0, 0);
+            controls.update();
+        }
+
+        // 初始坐标轴（范围6）
+        rebuildAxes(6);
+
+        // ==================== 状态栏管理 ====================
+        // 封装状态栏文本与样式切换：cls ∈ {'ok','err','warn',''}
+        const statusEl = document.getElementById('status');
+        function setStatus(text, cls = 'ok') {
+            statusEl.textContent = text;
+            statusEl.className = cls;
+        }
+        // 错误专用：标题 + 详情，自动归为 err 类
+        function showError(title, detail) {
+            setStatus(`${title}\n${detail || ''}`.trim(), 'err');
+        }
+
+        // ==================== 表达式预处理函数 ====================
+        // 这一组函数把用户输入的"数学习惯写法"逐步改写成"合法 JS 表达式"
+
+        /**
+         * 把 |...| 形式的绝对值改写成 Math.abs(...)
+         * 采用配对扫描：找到第一个 |，向后找匹配的 |，整体替换
+         * 循环处理多个绝对值，guard 防止死循环
+         * @param {string} s - 待处理表达式
+         * @returns {string} - 处理后的表达式
+         * @throws {Error} - | 不配对时抛错
+         */
+        function convertAbs(s) {
+            let result = s;
+            let changed = true;
+            let guard = 0;
+            while (changed && guard < 20) {
+                changed = false;
+                guard++;
+                const start = result.indexOf('|');
+                if (start === -1) break;
+                // 从 start+1 向后找匹配的第二个 |
+                let depth = 1;
+                let end = -1;
+                for (let i = start + 1; i < result.length; i++) {
+                    if (result[i] === '|') { depth--; if (depth === 0) { end = i; break; } }
+                }
+                if (end === -1) throw new Error('绝对值符号 | 不配对');
+                const inner = result.substring(start + 1, end);
+                result = result.substring(0, start) + `Math.abs(${inner})` + result.substring(end + 1);
+                changed = true;
+            }
+            return result;
+        }
+
+        /**
+         * 把 e^(...) 形式的指数改写成 Math.exp(...)
+         * 分三种情况处理：
+         *   1. e**(  ... )   → Math.exp(...)
+         *   2. e**func(...)   → Math.exp(func(...))
+         *   3. e**var 或 e**num → Math.exp(var) / Math.exp(num)
+         * 循环处理多个匹配，guard 防死循环
+         * @param {string} s - 待处理表达式
+         * @returns {string} - 处理后的表达式
+         */
+        function convertEExp(s) {
+            let result = s;
+            let changed = true;
+            let guard = 0;
+            while (changed && guard < 30) {
+                changed = false;
+                guard++;
+                // 情况1：e ** ( ... )
+                const re = /e\s*\*\*\s*\(/g;
+                let match;
+                while ((match = re.exec(result)) !== null) {
+                    const start = match.index;
+                    const openParen = result.indexOf('(', start + match[0].length - 1);
+                    if (openParen === -1) continue;
+                    // 找匹配的右括号
+                    let depth = 0, end = -1;
+                    for (let i = openParen; i < result.length; i++) {
+                        if (result[i] === '(') depth++;
+                        else if (result[i] === ')') { depth--; if (depth === 0) { end = i; break; } }
+                    }
+                    if (end === -1) continue;
+                    result = result.substring(0, start) + `Math.exp(${result.substring(openParen + 1, end)})` + result.substring(end + 1);
+                    changed = true; break;
+                }
+                if (changed) continue;
+                // 情况2：e ** func(...)
+                const re2 = /e\s*\*\*\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\(/g;
+                while ((match = re2.exec(result)) !== null) {
+                    const start = match.index;
+                    const funcName = match[1];
+                    const openParen = result.indexOf('(', start + match[0].length - 1);
+                    if (openParen === -1) continue;
+                    let depth = 0, end = -1;
+                    for (let i = openParen; i < result.length; i++) {
+                        if (result[i] === '(') depth++;
+                        else if (result[i] === ')') { depth--; if (depth === 0) { end = i; break; } }
+                    }
+                    if (end === -1) continue;
+                    result = result.substring(0, start) + `Math.exp(${funcName}(${result.substring(openParen + 1, end)}))` + result.substring(end + 1);
+                    changed = true; break;
+                }
+                if (changed) continue;
+                // 情况3：e ** var 或 e ** number
+                const re3 = /e\s*\*\*\s*([a-zA-Z_][a-zA-Z0-9_]*|\d+(?:\.\d+)?)/g;
+                while ((match = re3.exec(result)) !== null) {
+                    const start = match.index;
+                    const arg = match[1];
+                    const afterIdx = start + match[0].length;
+                    if (result[afterIdx] === '(') continue;   // 已被情况2处理
+                    result = result.substring(0, start) + `Math.exp(${arg})` + result.substring(afterIdx);
+                    changed = true; break;
+                }
+            }
+            return result;
+        }
+
+        /**
+         * 规范化函数名与少数易错写法
+         * - 修正拼写：suqrt/sqr → sqrt
+         * - 把 sec/csc/cot 改写为 1/cos、1/sin、1/tan
+         * 循环处理直到不再变化（因为替换后可能产生新的可匹配文本）
+         * @param {string} s - 待处理表达式
+         * @returns {string} - 处理后的表达式
+         */
+        function normalizeFunctions(s) {
+            s = s.replace(/\bsuqrt\b/g, 'sqrt');
+            s = s.replace(/\bsqr\b/g, 'sqrt');
+            let prev;
+            do {
+                prev = s;
+                s = s.replace(/(?<![\w.])sec\s*\(([^()]*)\)/g, '1/Math.cos($1)');
+                s = s.replace(/(?<![\w.])csc\s*\(([^()]*)\)/g, '1/Math.sin($1)');
+                s = s.replace(/(?<![\w.])cot\s*\(([^()]*)\)/g, '1/Math.tan($1)');
+            } while (s !== prev);
+            return s;
+        }
+
+        /**
+         * 处理函数名后直接跟变量的简写：sinx → sin(x)
+         * 同时检测歧义写法：tanxy 既可理解为 tan(x*y) 也可理解为 tan(x)*y，直接报错让用户明确
+         * @param {string} s - 待处理表达式
+         * @param {string[]} variables - 变量名列表，如 ['x','y'] 或 ['x','y','z']
+         * @returns {string|null} - 处理后的表达式；检测到歧义时返回 null 并通过 showError 提示
+         */
+        function normalizeFuncVar(s, variables) {
+            const funcs = ['sin','cos','tan','ln','log','exp','sqrt','abs','sec','csc','cot','asin','acos','atan','sinh','cosh','tanh'];
+            let result = s;
+            let ambiguous = null;
+            // 先扫描两字母组合（func + v1 + v2）是否出现歧义
+            funcs.forEach(fn => {
+                variables.forEach(v1 => {
+                    variables.forEach(v2 => {
+                        if (v1 === v2) return;
+                        const regex = new RegExp(`(?<![\\w.])${fn}${v1}${v2}(?![\\w])`, 'g');
+                        if (regex.test(result)) ambiguous = `${fn}${v1}${v2}`;
+                    });
+                });
+            });
+            if (ambiguous) {
+                const fnMatch = ambiguous.match(/^([a-z]+)/)[1];
+                const rest = ambiguous.substring(fnMatch.length);
+                showError(
+                    `检测到有歧义的写法: ${ambiguous}`,
+                    `请明确写成以下形式之一:\n  ${fnMatch}(${rest[0]}*${rest[1]})   函数作用于乘积\n  ${fnMatch}(${rest[0]})*${rest[1]}   函数乘以变量\n例如 tanxy 应写为 tan(x*y) 或 tan(x)*y`
+                );
+                return null;
+            }
+            // 无歧义：func + 单变量 → func(变量)
+            funcs.forEach(fn => {
+                variables.forEach(v => {
+                    const regex = new RegExp(`(?<![\\w.])${fn}${v}(?![\\w])`, 'g');
+                    result = result.replace(regex, `${fn}(${v})`);
+                });
+            });
+            return result;
+        }
+
+        // ==================== 核心解析器 ====================
+        /**
+         * 把用户输入的数学表达式编译成一个 JS 函数
+         *
+         * 处理流程：
+         *   1. Unicode 乘号 → *
+         *   2. 括号匹配校验
+         *   3. 显式声明剥离：y=f(x) / z=f(x,y) / z(x,y)=... → 只保留右边
+         *   4. 隐式方程移项：F=G → (F)-(G)，统一成求零点
+         *   5. 不等式检测（不支持）
+         *   6. 函数名/变量规范化（normalizeFunctions / normalizeFuncVar）
+         *   7. |abs| 转换、logb/log(底,真) 转换
+         *   8. ^ → **、e^x → Math.exp
+         *   9. 数学函数名加 Math. 前缀
+         *   10. 隐式乘法插入：2x → 2*x、xy → x*y、2( → 2*(
+         *   11. new Function 编译，并用 0.5 试算一次验证语法
+         *
+         * @param {string} input - 用户原始输入
+         * @param {string[]} variables - 变量名列表
+         * @param {boolean} isExplicit - 是否为显式声明（y=... / z=...），显式时剥离左值
+         * @returns {Function|null} - 编译后的函数 f(...vars)；失败返回 null 并 showError
+         */
+        function parseExpression(input, variables = ['x', 'y'], isExplicit = false) {
+            let s = input.trim();
+            if (!s) { showError('请输入公式'); return null; }
+
+            // 1. Unicode 乘号统一成 *
+            s = s.replace(/[⋅×·]/g, '*');
+
+            // 2. 括号匹配校验：中途深度变负 = 多余 )，最终非零 = 数量不等
+            let parenDepth = 0;
+            for (let i = 0; i < s.length; i++) {
+                if (s[i] === '(') parenDepth++;
+                else if (s[i] === ')') { parenDepth--; if (parenDepth < 0) { showError('括号不匹配: 出现多余的 )'); return null; } }
+            }
+            if (parenDepth !== 0) { showError('括号不匹配: ( 和 ) 数量不等'); return null; }
+
+            // 已知函数名清单（用于判断 "xxx(...)=..." 中的 xxx 是函数声明还是已知函数）
+            const knownFuncs = ['sin','cos','tan','ln','log','exp','sqrt','abs','sec','csc','cot','asin','acos','atan','sinh','cosh','tanh','log2','log10'];
+
+            // 3. 显式声明剥离：y=... / z=... / 任意名(...)=...
+            if (isExplicit) {
+                // 先匹配 y= 或 z=（显式曲线/曲面的左值）
+                const m1 = s.match(/^\s*([yz])\s*=\s*(.+)$/s);
+                if (m1) {
+                    s = m1[2].trim();
+                } else {
+                    // 再匹配 z(x,y)=... 这类带形参的声明
+                    const m2 = s.match(/^\s*([a-zA-Z_]\w*)\s*\([^)]*\)\s*=\s*(.+)$/s);
+                    if (m2 && !knownFuncs.includes(m2[1])) {
+                        s = m2[2].trim();
+                    }
+                }
+            }
+
+            // 4. 隐式方程移项：把 F=G 改写成 (F)-(G)，统一求零点
+            if (!isExplicit) {
+                // 形如 w(x,y,z)=... 的声明：固定等号左边为 0，画右边=0 的等值面/线
+                const m3 = s.match(/^\s*([a-zA-Z_]\w*)\s*\([^)]*\)\s*=\s*(.+)$/s);
+                if (m3 && !knownFuncs.includes(m3[1])) {
+                    s = `(${m3[2].trim()}) - 0`;
+                    window.__funcDeclNotice = '检测到函数声明前缀，已固定等号左边为 0 绘制等值面/线。';
+                } else {
+                    // 普通隐式方程：找出单个 =（排除 ==、<=、>=），左右移项
+                    const eqMatches = s.match(/(?<![<>=!])=(?!=)/g);
+                    if (eqMatches) {
+                        if (eqMatches.length > 1) { showError('公式中只能有一个等号'); return null; }
+                        const parts = s.split(/(?<![<>=!])=(?!=)/);
+                        if (parts.length === 2) {
+                            s = `(${parts[0].trim()})-(${parts[1].trim()})`;
+                        }
+                    }
+                }
+            }
+
+            // 5. 不等式检测：本工具只画等值线/面 F=0，不支持区域填充
+            if (/[<>]/.test(s) && !/[<>]=/.test(s)) {
+                showError('检测到不等式 ( > 或 < )', '本工具绘制等值线/面 F=0，不支持区域填充。请去掉不等号。');
+                return null;
+            }
+
+            // 6. 函数名与变量规范化
+            s = normalizeFunctions(s);
+            s = normalizeFuncVar(s, variables);
+            if (s === null) return null;   // 歧义写法已报错
+
+            // 7. |绝对值| 转换
+            try { s = convertAbs(s); } catch (e) { showError(e.message); return null; }
+
+            // 8. 对数底数支持：logb(b, a) → Math.log(a)/Math.log(b)；log(b, a) → 同上
+            const logbRegex = /logb\(([^()]*),([^()]*)\)/g;
+            let prev;
+            do { prev = s; s = s.replace(logbRegex, (m, b, a) => `(Math.log(${a})/Math.log(${b}))`); } while (s !== prev);
+            const log2ArgRegex = /(?<![\w.])log\s*\(\s*([^(),]+)\s*,\s*([^(),]+)\s*\)/g;
+            do { prev = s; s = s.replace(log2ArgRegex, (m, b, a) => `(Math.log(${a})/Math.log(${b}))`); } while (s !== prev);
+
+            // 9. ^ → **（JS 幂运算符）；e^x 形式转 Math.exp
+            s = s.replace(/\^/g, '**');
+            s = convertEExp(s);
+
+            // 10. 数学函数名加 Math. 前缀（ln→Math.log、log→Math.log10 等）
+            s = s.replace(/(?<![\w.])ln\s*\(/g, 'Math.log(');
+            s = s.replace(/(?<![\w.])log2\s*\(/g, 'Math.log2(');
+            s = s.replace(/(?<![\w.])log10\s*\(/g, 'Math.log10(');
+            s = s.replace(/(?<![\w.])log\s*\(/g, 'Math.log10(');
+            s = s.replace(/(?<![\w.])exp\s*\(/g, 'Math.exp(');
+
+            // 其余与 Math 同名的函数：sin/cos/tan/asin/acos/atan/sqrt/abs/floor/ceil/round/sign/min/max/pow
+            ['sin','cos','tan','asin','acos','atan','sqrt','abs','floor','ceil','round','sign','min','max','pow'].forEach(fn => {
+                const regex = new RegExp(`(?<![\\w.])${fn}\\s*\\(`, 'g');
+                s = s.replace(regex, `Math.${fn}(`);
+            });
+
+            // 11. 常量替换：pi/PI → Math.PI，e → Math.E
+            s = s.replace(/(?<![\w.])pi\b/g, 'Math.PI');
+            s = s.replace(/(?<![\w.])PI\b/g, 'Math.PI');
+            s = s.replace(/(?<![\w.])e(?![\w.])/g, 'Math.E');
+
+            // 12. 隐式乘法插入
+            //    先把 "Math.xxx" 暂存占位符，避免被后续数字/字母插入 * 影响
+            const protectedSegments = [];
+            s = s.replace(/Math\.[a-zA-Z0-9]+/g, (m) => {
+                protectedSegments.push(m);
+                return `__MATH_${protectedSegments.length - 1}__`;
+            });
+
+            // 数字后跟字母或左括号：2x → 2*x，2( → 2*(
+            s = s.replace(/(\d)\s*([a-zA-Z(])/g, '$1*$2');
+
+            // 单字母变量两两相邻：xy → x*y（只对单字母变量生效，避免误伤多字母函数名）
+            const varList = variables.filter(v => v.length === 1);
+            varList.forEach(v1 => {
+                varList.forEach(v2 => {
+                    const regex = new RegExp(`(?<![a-zA-Z_])${v1}${v2}(?![a-zA-Z_])`, 'g');
+                    s = s.replace(regex, `${v1}*${v2}`);
+                });
+            });
+
+            // 变量后跟左括号：x( → x*(  （例如 x(x+1) 视为 x*(x+1)）
+            varList.forEach(v => {
+                const regex = new RegExp(`(?<![a-zA-Z_])${v}(?=\\s*\\()`, 'g');
+                s = s.replace(regex, `${v}*`);
+            });
+
+            // 还原 Math.xxx 占位符
+            s = s.replace(/__MATH_(\d+)__/g, (m, i) => protectedSegments[parseInt(i)]);
+            // 右括号后跟字母/数字/左括号：)x → )*x，)2 → )*2，)( → )*(
+            s = s.replace(/\)\s*([a-zA-Z0-9(])/g, ')*$1');
+
+            // 13. 编译：用 new Function 生成函数，并用 0.5 试算一次验证语法
+            try {
+                const funcBody = `"use strict"; return (${s});`;
+                const func = new Function(...variables, funcBody);
+                func(...variables.map(() => 0.5));   // 试算，触发可能的语法/运行时错误
+                window.__lastConverted = s;          // 保存转换后表达式，供状态栏展示
+                return func;
+            } catch (e) {
+                console.error('解析失败:', e, '\n转换后:', s);
+                window.__lastConverted = s;
+                showError(`公式解析错误: ${e.message}`, `转换后表达式:\n${s}`);
+                return null;
+            }
+        }
+
+        // ==================== Marching Cubes 查找表 ====================
+        // edgeTable[cubeIndex]：8 位 cubeIndex 表示立方体 8 个顶点的正负符号状态，
+        //   返回 12 位掩码，指示哪几条边与零等值面相交
+        // triTable[cubeIndex]：按顺序给出每个三角面片的顶点索引（指向 12 条边上的交点）
+        // 算法核心：对每个体素立方体，根据 8 顶点符号查表得到三角面片，
+        //   并把各体素的三角面片顶点直接累加进同一数组（不做顶点焊接/拓扑拼接，
+        //   相邻体素共享边上的交点会各自生成一份，靠位置重合在视觉上连续）
+        const edgeTable = new Int32Array([
+            0x0,0x109,0x203,0x30a,0x406,0x50f,0x605,0x70c,0x80c,0x905,0xa0f,0xb06,0xc0a,0xd03,0xe09,0xf00,
+            0x190,0x99,0x393,0x29a,0x596,0x49f,0x795,0x69c,0x99c,0x895,0xb9f,0xa96,0xd9a,0xc93,0xf99,0xe90,
+            0x230,0x339,0x33,0x13a,0x636,0x73f,0x435,0x53c,0xa3c,0xb35,0x83f,0x936,0xe3a,0xf33,0xc39,0xd30,
+            0x3a0,0x2a9,0x1a3,0xaa,0x7a6,0x6af,0x5a5,0x4ac,0xbac,0xaa5,0x9af,0x8a6,0xfaa,0xea3,0xda9,0xca0,
+            0x460,0x569,0x663,0x76a,0x66,0x16f,0x265,0x36c,0xc6c,0xd65,0xe6f,0xf66,0x86a,0x963,0xa69,0xb60,
+            0x5f0,0x4f9,0x7f3,0x6fa,0x1f6,0xff,0x3f5,0x2fc,0xdfc,0xcf5,0xfff,0xef6,0x9fa,0x8f3,0xbf9,0xaf0,
+            0x650,0x759,0x453,0x55a,0x256,0x35f,0x55,0x15c,0xe5c,0xf55,0xc5f,0xd56,0xa5a,0xb53,0x859,0x950,
+            0x7c0,0x6c9,0x5c3,0x4ca,0x3c6,0x2cf,0x1c5,0xcc,0xfcc,0xec5,0xdcf,0xcc6,0xbca,0xac3,0x9c9,0x8c0,
+            0x8c0,0x9c9,0xac3,0xbca,0xcc6,0xdcf,0xec5,0xfcc,0xcc,0x1c5,0x2cf,0x3c6,0x4ca,0x5c3,0x6c9,0x7c0,
+            0x950,0x859,0xb53,0xa5a,0xd56,0xc5f,0xf55,0xe5c,0x15c,0x55,0x35f,0x256,0x55a,0x453,0x759,0x650,
+            0xaf0,0xbf9,0x8f3,0x9fa,0xef6,0xfff,0xcf5,0xdfc,0x2fc,0x3f5,0xff,0x1f6,0x6fa,0x7f3,0x4f9,0x5f0,
+            0xb60,0xa69,0x963,0x86a,0xf66,0xe6f,0xd65,0xc6c,0x36c,0x265,0x16f,0x66,0x76a,0x663,0x569,0x460,
+            0xca0,0xda9,0xea3,0xfaa,0x8a6,0x9af,0xaa5,0xbac,0x4ac,0x5a5,0x6af,0x7a6,0xaa,0x1a3,0x2a9,0x3a0,
+            0xd30,0xc39,0xf33,0xe3a,0x936,0x83f,0xb35,0xa3c,0x53c,0x435,0x73f,0x636,0x13a,0x33,0x339,0x230,
+            0xe90,0xf99,0xc93,0xd9a,0xa96,0xb9f,0x895,0x99c,0x69c,0x795,0x49f,0x596,0x29a,0x393,0x99,0x190,
+            0xf00,0xe09,0xd03,0xc0a,0xb06,0xa0f,0x905,0x80c,0x70c,0x605,0x50f,0x406,0x30a,0x203,0x109,0x0
+        ]);
+        // triTable：每个 cubeIndex 对应一组三角面片顶点索引（索引指向 12 条边上的交点，索引值可能重复出现）
+        const triTable = [
+            [], [0,8,3], [0,1,9], [1,8,3,9,8,1], [1,2,10], [0,8,3,1,2,10], [9,2,10,0,2,9], [2,8,3,2,10,8,10,9,8],
+            [3,11,2], [0,11,2,8,11,0], [1,9,0,2,3,11], [1,11,2,1,9,11,9,8,11], [3,10,1,11,10,3], [0,10,1,0,8,10,8,11,10],
+            [3,9,0,3,11,9,11,10,9], [9,8,10,10,8,11], [4,7,8], [4,3,0,7,3,4], [0,1,9,8,4,7], [4,1,9,4,7,1,7,3,1],
+            [1,2,10,8,4,7], [3,4,7,3,0,4,1,2,10], [9,2,10,9,0,2,8,4,7], [2,10,9,2,9,7,2,7,3,7,9,4], [8,4,7,3,11,2],
+            [11,4,7,11,2,4,2,0,4], [9,0,1,8,4,7,2,3,11], [4,7,11,9,4,11,9,11,2,9,2,1], [3,10,1,3,11,10,7,8,4],
+            [1,11,10,1,4,11,1,0,4,7,11,4], [4,7,8,9,0,11,9,11,10,11,0,3], [4,7,11,4,11,9,9,11,10], [9,5,4],
+            [9,5,4,0,8,3], [0,5,4,1,5,0], [8,5,4,8,3,5,3,1,5], [1,2,10,9,5,4], [3,0,8,1,2,10,4,9,5],
+            [5,2,10,5,4,2,4,0,2], [2,10,5,3,2,5,3,5,4,3,4,8], [9,5,4,2,3,11], [0,11,2,0,8,11,4,9,5],
+            [0,5,4,0,1,5,2,3,11], [2,1,5,2,5,8,2,8,11,4,8,5], [10,3,11,10,1,3,9,5,4], [4,9,5,0,8,1,8,10,1,8,11,10],
+            [5,4,0,5,0,11,5,11,10,11,0,3], [5,4,8,5,8,10,10,8,11], [9,7,8,5,7,9], [9,3,0,9,5,3,5,7,3],
+            [0,7,8,0,1,7,1,5,7], [1,5,3,3,5,7], [9,7,8,9,5,7,10,1,2], [10,1,2,9,5,0,5,3,0,5,7,3],
+            [8,0,2,8,2,5,8,5,7,10,5,2], [2,10,5,2,5,3,3,5,7], [7,9,5,7,8,9,3,11,2], [9,5,7,9,7,2,9,2,0,2,7,11],
+            [2,3,11,0,1,8,1,7,8,1,5,7], [11,2,1,11,1,7,7,1,5], [9,5,8,8,5,7,10,1,3,10,3,11], [5,7,0,5,0,9,7,11,0,1,0,10,11,10,0],
+            [11,10,0,11,0,3,10,5,0,8,0,7,5,7,0], [11,10,5,7,11,5], [10,6,5], [0,8,3,5,10,6], [9,0,1,5,10,6],
+            [1,8,3,1,9,8,5,10,6], [1,6,5,2,6,1], [1,6,5,1,2,6,3,0,8], [9,6,5,9,0,6,0,2,6], [5,9,8,5,8,2,5,2,6,3,2,8],
+            [2,3,11,10,6,5], [11,0,8,11,2,0,10,6,5], [0,1,9,2,3,11,5,10,6], [5,10,6,1,9,2,9,11,2,9,8,11],
+            [6,3,11,6,5,3,5,1,3], [0,8,11,0,11,5,0,5,1,5,11,6], [3,11,6,0,3,6,0,6,5,0,5,9], [6,5,9,6,9,11,11,9,8],
+            [5,10,6,4,7,8], [4,3,0,4,7,3,6,5,10], [1,9,0,5,10,6,8,4,7], [10,6,5,1,9,7,1,7,3,7,9,4],
+            [6,1,2,6,5,1,4,7,8], [1,2,5,5,2,6,3,0,4,3,4,7], [8,4,7,9,0,5,0,6,5,0,2,6], [7,3,9,7,9,4,3,2,9,5,9,6,2,6,9],
+            [3,11,2,7,8,4,10,6,5], [5,10,6,4,7,2,4,2,0,2,7,11], [0,1,9,4,7,8,2,3,11,5,10,6],
+            [9,2,1,9,11,2,9,4,11,7,11,4,5,10,6], [8,4,7,3,11,5,3,5,1,5,11,6], [5,1,11,5,11,6,1,0,11,7,11,4,0,4,11],
+            [0,5,9,0,6,5,0,3,6,11,6,3,8,4,7], [6,5,9,6,9,11,4,7,9,7,11,9], [10,4,9,6,4,10], [4,10,6,4,9,10,0,8,3],
+            [10,0,1,10,6,0,6,4,0], [8,3,1,8,1,6,8,6,4,6,1,10], [1,4,9,1,2,4,2,6,4], [3,0,8,1,2,9,2,4,9,2,6,4],
+            [0,2,4,4,2,6], [8,3,2,8,2,4,4,2,6], [10,4,9,10,6,4,11,2,3], [0,8,2,2,8,11,4,9,10,4,10,6],
+            [3,11,2,0,1,6,0,6,4,6,1,10], [6,4,1,6,1,10,4,8,1,2,1,11,8,11,1], [9,6,4,9,3,6,9,1,3,11,6,3],
+            [8,11,1,8,1,0,11,6,1,9,1,4,6,4,1], [3,11,6,3,6,0,0,6,4], [6,4,8,11,6,8], [7,10,6,7,8,10,8,9,10],
+            [0,7,3,0,10,7,0,9,10,6,7,10], [10,6,7,1,10,7,1,7,8,1,8,0], [10,6,7,10,7,1,1,7,3],
+            [1,2,6,1,6,8,1,8,9,8,6,7], [2,6,9,2,9,1,6,7,9,0,9,3,7,3,9], [7,8,0,7,0,6,6,0,2], [7,3,2,6,7,2],
+            [2,3,11,10,6,8,10,8,9,8,6,7], [2,0,7,2,7,11,0,9,7,6,7,10,9,10,7], [1,8,0,1,7,8,1,10,7,6,7,10,2,3,11],
+            [11,2,1,11,1,7,10,6,1,6,7,1], [8,9,6,8,6,7,9,1,6,11,6,3,1,3,6], [0,9,1,11,6,7], [7,8,0,7,0,6,3,11,0,11,6,0],
+            [7,11,6], [7,6,11], [3,0,8,11,7,6], [0,1,9,11,7,6], [8,1,9,8,3,1,11,7,6],
+            [10,1,2,6,11,7], [1,2,10,3,0,8,6,11,7], [2,9,0,2,10,9,6,11,7], [6,11,7,2,10,3,10,8,3,10,9,8],
+            [7,2,3,6,2,7], [7,0,8,7,6,0,6,2,0], [2,7,6,2,3,7,0,1,9], [1,6,2,1,8,6,1,9,8,8,7,6],
+            [10,7,6,10,1,7,1,3,7], [10,7,6,1,7,10,1,8,7,1,0,8], [0,3,7,0,7,10,0,10,9,6,10,7], [7,6,10,7,10,8,8,10,9],
+            [6,8,4,11,8,6], [3,6,11,3,0,6,0,4,6], [8,6,11,8,4,6,9,0,1], [9,4,6,9,6,3,9,3,1,11,3,6],
+            [6,8,4,6,11,8,2,10,1], [1,2,10,3,0,11,0,6,11,0,4,6], [4,11,8,4,6,11,0,2,9,2,10,9], [10,9,3,10,3,2,9,4,3,11,3,6,4,6,3],
+            [8,2,3,8,4,2,4,6,2], [0,4,2,4,6,2], [1,9,0,2,3,4,2,4,6,4,3,8], [1,9,4,1,4,2,2,4,6], [8,1,3,8,6,1,8,4,6,6,10,1],
+            [10,1,0,10,0,6,6,0,4], [4,6,3,4,3,8,6,10,3,0,3,9,10,9,3], [10,9,4,6,10,4], [4,9,5,7,6,11],
+            [0,8,3,4,9,5,11,7,6], [5,0,1,5,4,0,7,6,11], [11,7,6,8,3,4,3,5,4,3,1,5],
+            [9,5,4,10,1,2,7,6,11], [6,11,7,1,2,10,0,8,3,4,9,5], [7,6,11,5,4,10,4,2,10,4,0,2],
+            [3,4,8,3,5,4,3,2,5,10,5,2,11,7,6], [7,2,3,7,6,2,5,4,9], [9,5,4,0,8,6,0,6,2,6,8,7],
+            [3,6,2,3,7,6,1,5,0,5,4,0], [6,2,8,6,8,7,2,1,8,4,8,5,1,5,8], [9,5,4,10,1,6,1,7,6,1,3,7],
+            [1,6,10,1,7,6,1,0,7,8,7,0,9,5,4], [4,0,10,4,10,5,0,3,10,6,10,7,3,7,10], [7,6,10,7,10,8,5,4,10,4,8,10],
+            [6,9,5,6,11,9,11,8,9], [3,6,11,0,6,3,0,5,6,0,9,5], [0,11,8,0,5,11,0,1,5,5,6,11],
+            [6,11,3,6,3,5,5,3,1], [1,2,10,9,5,11,9,11,8,11,5,6], [0,11,3,0,6,11,0,9,6,5,6,9,1,2,10],
+            [11,8,5,11,5,6,8,0,5,10,5,2,0,2,5], [6,11,3,6,3,5,2,10,3,10,5,3], [5,8,9,5,2,8,5,6,2,3,8,2],
+            [9,5,6,9,6,0,0,6,2], [1,5,8,1,8,0,5,6,8,3,8,2,6,2,8], [1,5,6,2,1,6], [1,3,6,1,6,10,3,8,6,5,6,9,8,9,6],
+            [10,1,0,10,0,6,9,5,0,5,6,0], [0,3,8,5,6,10], [10,5,6], [11,5,10,7,5,11], [11,5,10,11,7,5,8,3,0],
+            [5,11,7,5,10,11,1,9,0], [10,7,5,10,11,7,9,8,1,8,3,1], [11,1,2,11,7,1,7,5,1],
+            [0,8,3,1,2,7,1,7,5,7,2,11], [9,7,5,9,2,7,9,0,2,2,11,7], [7,5,2,7,2,11,5,9,2,3,2,8,9,8,2],
+            [2,5,10,2,3,5,3,7,5], [8,2,0,8,5,2,8,7,5,10,2,5], [9,0,1,5,10,3,5,3,7,3,10,2],
+            [9,8,2,9,2,1,8,7,2,10,2,5,7,5,2], [1,3,5,3,7,5], [0,8,7,0,7,1,1,7,5], [9,0,3,9,3,5,5,3,7], [9,8,7,5,9,7],
+            [5,8,4,5,10,8,10,11,8], [5,0,4,5,11,0,5,10,11,11,3,0], [0,1,9,8,4,10,8,10,11,10,4,5],
+            [10,11,4,10,4,5,11,3,4,9,4,1,3,1,4], [2,5,1,2,8,5,2,11,8,4,5,8], [0,4,11,0,11,3,4,5,11,2,11,1,5,1,11],
+            [0,2,5,0,5,9,2,11,5,4,5,8,11,8,5], [9,4,5,2,11,3], [2,5,10,3,5,2,3,4,5,3,8,4],
+            [5,10,2,5,2,4,4,2,0], [3,10,2,3,5,10,3,8,5,4,5,8,0,1,9], [5,10,2,5,2,4,1,9,2,9,4,2],
+            [8,4,5,8,5,3,3,5,1], [0,4,5,1,0,5], [8,4,5,8,5,3,9,0,5,0,3,5], [9,4,5], [4,11,7,4,9,11,9,10,11],
+            [0,8,3,4,9,7,9,11,7,9,10,11], [1,10,11,1,11,4,1,4,0,7,4,11], [3,1,4,3,4,8,1,10,4,7,4,11,10,11,4],
+            [4,11,7,9,11,4,9,2,11,9,1,2], [9,7,4,9,11,7,9,1,11,2,11,1,0,8,3], [11,7,4,11,4,2,2,4,0],
+            [11,7,4,11,4,2,8,3,4,3,2,4], [2,9,10,2,7,9,2,3,7,7,4,9], [9,10,7,9,7,4,10,2,7,8,7,0,2,0,7],
+            [3,7,10,3,10,2,7,4,10,1,10,0,4,0,10], [1,10,2,8,7,4], [4,9,1,4,1,7,7,1,3], [4,9,1,4,1,7,0,8,1,8,7,1],
+            [4,0,3,7,4,3], [4,8,7], [9,10,8,10,11,8], [3,0,9,3,9,11,11,9,10], [0,1,10,0,10,8,8,10,11],
+            [3,1,10,11,3,10], [1,2,11,1,11,9,9,11,8], [3,0,9,3,9,11,1,2,9,2,11,9], [0,2,11,8,0,11], [3,2,11],
+            [2,3,8,2,8,10,10,8,9], [9,10,2,0,9,2], [2,3,8,2,8,10,0,1,8,1,10,8], [1,10,2], [1,3,8,9,1,8], [0,9,1], [0,3,8], []
+        ];
+
+        // 立方体 8 个顶点的局部坐标（0/1 组合），用于体素内插值
+        const cubeVerts = [[0,0,0],[1,0,0],[1,1,0],[0,1,0],[0,0,1],[1,0,1],[1,1,1],[0,1,1]];
+        // 12 条边连接的顶点下标对，用于在边上做线性插值求零点
+        const edgeConn = [[0,1],[1,2],[2,3],[3,0],[4,5],[5,6],[6,7],[7,4],[0,4],[1,5],[2,6],[3,7]];
+
+                // ==================== 三维隐函数（Marching Cubes） ====================
+        /**
+         * 绘制三维隐函数 F(x,y,z)=0 的等值面
+         *
+         * 算法：Marching Cubes
+         *   1. 在 [-R,R]^3 上采样标量场 F
+         *   2. 遍历每个体素立方体，根据 8 顶点符号得到 cubeIndex
+         *   3. 查 edgeTable 知道哪些边与等值面相交，在边上线性插值求交点
+         *   4. 查 triTable 把交点组成三角面片
+         *   5. 累加所有三角面片顶点 + 法线
+         *   6. 单函数时按顶点 z 百分位映射到彩虹色环，多函数时用纯色区分
+         *
+         * @param {string} expr - 用户输入的表达式
+         * @param {number} range - 范围 ±R
+         * @param {number} resolution - 每边体素数
+         * @param {number|null} color - null=彩虹顶点色（单函数）；非 null=纯色（多函数叠加）
+         * @returns {THREE.Mesh|null} - 等值面网格；无顶点时返回 null
+         */
+        function drawImplicit3D(expr, range = 2.5, resolution = 48, color = null) {
+            const f = parseExpression(expr, ['x', 'y', 'z']);
+            if (!f) return null;
+            const gridSize = resolution;
+            const step = (2 * range) / gridSize;       // 体素边长
+            const start = -range;
+            // 标量场：三维数组压成一维 Float32Array，节省内存
+            const field = new Float32Array((gridSize + 1) ** 3);
+            // 三维索引 → 一维下标
+            const idx = (i, j, k) => i + j * (gridSize + 1) + k * (gridSize + 1) * (gridSize + 1);
+            // 采样：逐点计算 F(x,y,z)，非有限值用 1 代替（避免 NaN 污染符号判断）
+            for (let k = 0; k <= gridSize; k++) {
+                const z = start + k * step;
+                for (let j = 0; j <= gridSize; j++) {
+                    const y = start + j * step;
+                    for (let i = 0; i <= gridSize; i++) {
+                        const x = start + i * step;
+                        let val;
+                        try { val = f(x, y, z); } catch (e) { val = NaN; }
+                        if (!isFinite(val) || isNaN(val)) val = 1;
+                        field[idx(i, j, k)] = val;
+                    }
+                }
+            }
+            // 诊断：统计正/负顶点数，用于无网格时给用户提示
+            let negCount = 0, posCount = 0;
+            for (let i = 0; i < field.length; i++) {
+                if (field[i] < 0) negCount++;
+                else if (field[i] > 0) posCount++;
+            }
+            window.__last3DDiag = { negCount, posCount, total: field.length };
+
+            // 遍历所有体素，提取三角面片
+            const vertices = [], normals = [];
+            for (let k = 0; k < gridSize; k++) {
+                for (let j = 0; j < gridSize; j++) {
+                    for (let i = 0; i < gridSize; i++) {
+                        // 取当前体素 8 顶点的标量值
+                        const v = [];
+                        for (let c = 0; c < 8; c++) {
+                            const [dx, dy, dz] = cubeVerts[c];
+                            v.push(field[idx(i + dx, j + dy, k + dz)]);
+                        }
+                        // 计算 cubeIndex：第 c 位 = 顶点 c 是否为负
+                        let cubeIndex = 0;
+                        for (let c = 0; c < 8; c++) if (v[c] < 0) cubeIndex |= (1 << c);
+                        const edges = edgeTable[cubeIndex];
+                        if (edges === 0) continue;   // 体素内无等值面
+                        // 对每条相交边，线性插值求交点坐标
+                        const edgeVertices = new Array(12);
+                        for (let e = 0; e < 12; e++) {
+                            if (!(edges & (1 << e))) continue;
+                            const [a, b] = edgeConn[e];
+                            const va = v[a], vb = v[b];
+                            // 插值比例 t = |va| / (|va|+|vb|)，加 1e-10 防除零
+                            const t = Math.abs(va) / (Math.abs(va) + Math.abs(vb) + 1e-10);
+                            const [ax, ay, az] = cubeVerts[a];
+                            const [bx, by, bz] = cubeVerts[b];
+                            edgeVertices[e] = new THREE.Vector3(
+                                start + (i + ax + t * (bx - ax)) * step,
+                                start + (j + ay + t * (by - ay)) * step,
+                                start + (k + az + t * (bz - az)) * step
+                            );
+                        }
+                        // 查 triTable，按三角形顶点索引输出顶点 + 法线
+                        const tri = triTable[cubeIndex];
+                        for (let t = 0; t < tri.length; t += 3) {
+                            const a = edgeVertices[tri[t]], b = edgeVertices[tri[t+1]], c = edgeVertices[tri[t+2]];
+                            if (!a || !b || !c) continue;
+                            vertices.push(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z);
+                            // 法线 = (b-a) × (c-a)，逐面片 flat normal
+                            const ab = new THREE.Vector3().subVectors(b, a);
+                            const ac = new THREE.Vector3().subVectors(c, a);
+                            const n = new THREE.Vector3().crossVectors(ab, ac).normalize();
+                            for (let nI = 0; nI < 3; nI++) normals.push(n.x, n.y, n.z);
+                        }
+                    }
+                }
+            }
+            if (vertices.length === 0) return null;
+
+            // 构建 BufferGeometry：position + normal
+            const geometry = new THREE.BufferGeometry();
+            geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+            geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+
+            // ===== 单函数：按顶点 z 百分位映射到 HSL 彩虹色环 =====
+            // 为什么用百分位而不是线性 (z-min)/(max-min)：
+            //   闭合曲面（球、环面、双曲面）的 z 分布经常极不均匀，
+            //   线性映射会让大部分表面挤在同一个色相（比如海蓝），看起来很闷。
+            //   百分位映射按"在当前曲面所有顶点中的排名"取色，
+            //   即使 z 分布严重偏斜，颜色也能铺满整个色环。
+            if (color === null) {
+                // 提取所有顶点的 z 值（vertices 结构是 [x,y,z, x,y,z, ...]）
+                const zs = [];
+                for (let i = 2; i < vertices.length; i += 3) zs.push(vertices[i]);
+                // 排序，用于二分查找百分位
+                const sortedZ = [...zs].sort((a, b) => a - b);
+                const n = sortedZ.length;
+                /**
+                 * 获取某个 z 值在全部顶点中的百分位（0=最低，1=最高）
+                 * 用二分查找在 sortedZ 里定位
+                 */
+                const getPercentile = (z) => {
+                    let lo = 0, hi = n - 1;
+                    while (lo < hi) {
+                        const mid = (lo + hi) >> 1;
+                        if (sortedZ[mid] < z) lo = mid + 1;
+                        else hi = mid;
+                    }
+                    return n > 1 ? lo / (n - 1) : 0.5;
+                };
+                // HSL → RGB 辅助函数（s=0.85, l=0.55 固定，只变色相）
+                const hue2rgb = (p1, q1, t1) => {
+                    if (t1 < 0) t1 += 1;
+                    if (t1 > 1) t1 -= 1;
+                    if (t1 < 1/6) return p1 + (q1 - p1) * 6 * t1;
+                    if (t1 < 1/2) return q1;
+                    if (t1 < 2/3) return p1 + (q1 - p1) * (2/3 - t1) * 6;
+                    return p1;
+                };
+                const colorsArr = new Float32Array(zs.length * 3);
+                for (let i = 0; i < zs.length; i++) {
+                    const p = getPercentile(zs[i]);
+                    // 色相从 240°(蓝) 线性降到 0°(红)：经过青→绿→黄→橙
+                    const h = (240 - 240 * p) / 360;
+                    const s = 0.85, l = 0.55;
+                    const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+                    const p1 = 2 * l - q;
+                    colorsArr[i * 3]     = hue2rgb(p1, q, h + 1/3); // R
+                    colorsArr[i * 3 + 1] = hue2rgb(p1, q, h);       // G
+                    colorsArr[i * 3 + 2] = hue2rgb(p1, q, h - 1/3); // B
+                }
+                geometry.setAttribute('color', new THREE.Float32BufferAttribute(colorsArr, 3));
+                geometry.computeBoundingSphere();
+
+                // 单函数：顶点色彩虹，不透明度稍高让颜色更实
+                return new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({
+                    vertexColors: true,
+                    roughness: 0.3, metalness: 0.15,
+                    side: THREE.DoubleSide,
+                    transparent: true, opacity: 0.95
+                }));
+            }
+
+            // ===== 多函数：纯色半透明，用于区分不同函数 =====
+            geometry.computeBoundingSphere();
+            return new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({
+                color: color, roughness: 0.35, metalness: 0.2,
+                emissive: new THREE.Color(color).multiplyScalar(0.2),
+                side: THREE.DoubleSide,
+                transparent: true, opacity: 0.85
+            }));
+        }
+
+        // ==================== 二维隐函数 ====================
+        /**
+         * 单元扫描：判断矩形 [x0,x1]×[y0,y1] 内 F 是否变号（即存在零点）
+         * 先看四角是否变号；若不变号但 |F| 很小，递归四分子单元继续找（最多 depth 层）
+         * 用于在「未检测到全局变号」时做更细致的判定，避免漏掉窄零点带
+         * @returns {{hasSign: boolean}}
+         */
+        function cellScan(f, x0, x1, y0, y1, depth) {
+            const p00 = f(x0, y0), p10 = f(x1, y0), p01 = f(x0, y1), p11 = f(x1, y1);
+            // 非有限值（定义域外/NaN）统一映射为大正数 1e9：
+            //   大正数视为"无零点"，与相邻的正常值比较时不会被误判为变号；
+            //   若映射为 0，则该点会被当成零点，产生虚假的等值线
+            const V = (v) => isFinite(v) ? v : 1e9;
+            const v00 = V(p00), v10 = V(p10), v01 = V(p01), v11 = V(p11);
+            // 四条边任一端点变号 → 有零点
+            const hasSign = (v00<=0&&v10>=0)||(v00>=0&&v10<=0)||(v01<=0&&v11>=0)||(v01>=0&&v11<=0);
+            if (hasSign) return { hasSign: true };
+            // 不变号但值很接近 0：递归四分子单元再找
+            const minAbs = Math.min(Math.abs(v00), Math.abs(v10), Math.abs(v01), Math.abs(v11));
+            if (depth > 0 && minAbs < 0.15) {
+                const xm = (x0 + x1) / 2, ym = (y0 + y1) / 2;
+                const quads = [[x0, xm, y0, ym], [xm, x1, y0, ym], [x0, xm, ym, y1], [xm, x1, ym, y1]];
+                for (const [ax0, ax1, ay0, ay1] of quads) {
+                    if (cellScan(f, ax0, ax1, ay0, ay1, depth - 1).hasSign) return { hasSign: true };
+                }
+            }
+            return { hasSign: false };
+        }
+
+        /**
+         * 绘制二维隐函数 F(x,y)=0 的等值线
+         *
+         * 算法：Marching Squares（变体）
+         *   1. 采样诊断：统计有效点、值域、|F| 最小值
+         *   2. 用 cellScan 判断范围内是否变号
+         *   3. 若不变号但 |F| 很小 → 近似模式：画 |F|=threshold 的等值线（蓝色）
+         *   4. 否则正常画 F=0 等值线（指定颜色）：逐格在四边上插值求交点，连成线段
+         *
+         * @param {string} expr - 用户输入的表达式
+         * @param {number} range - 范围 ±R
+         * @param {number} resolution - 每边格数
+         * @param {number} color - 等值线颜色（多函数时区分）
+         * @returns {THREE.LineSegments|null} - 等值线；无结果返回 null
+         */
+        function drawImplicit(expr, range = 6, resolution = 150, color = 0xffaa00) {
+            const f = parseExpression(expr, ['x', 'y']);
+            if (!f) return null;
+            const step = (range * 2) / resolution;
+            const start = -range;
+            // 1. 采样诊断：在 (sampleN+1)×(sampleN+1) 个网格点上统计值域与最小 |F|
+            //    （循环 i,j 均为 0..sampleN 闭区间，故每边 sampleN+1 个点）
+            let validCount = 0, nanCount = 0, errorCount = 0;
+            let minV = Infinity, maxV = -Infinity, minAbsF = Infinity;
+            const sampleN = Math.min(30, resolution);
+            for (let i = 0; i <= sampleN; i++) {
+                for (let j = 0; j <= sampleN; j++) {
+                    const x = start + (i / sampleN) * 2 * range;
+                    const y = start + (j / sampleN) * 2 * range;
+                    let v;
+                    try { v = f(x, y); } catch (e) { errorCount++; continue; }
+                    if (isFinite(v)) {
+                        validCount++;
+                        if (v < minV) minV = v;
+                        if (v > maxV) maxV = v;
+                        const a = Math.abs(v);
+                        if (a < minAbsF) minAbsF = a;
+                    } else { nanCount++; }
+                }
+            }
+            window.__lastDiagBase = { validCount, nanCount, errorCount, minV, maxV, minAbsF, range };
+            // 完全没有有效点 → 致命错误
+            if (validCount === 0) {
+                window.__lastDiag = { ...window.__lastDiagBase, noZero: true, fatal: true };
+                return null;
+            }
+            // 2. 用 cellScan 在全网格上找是否有变号（找到即提前退出）
+            let hasSignChange = false;
+            for (let i = 0; i < resolution && !hasSignChange; i++) {
+                const x0 = start + i * step, x1 = x0 + step;
+                for (let j = 0; j < resolution; j++) {
+                    const y0 = start + j * step, y1 = y0 + step;
+                    if (cellScan(f, x0, x1, y0, y1, 2).hasSign) { hasSignChange = true; break; }
+                }
+            }
+            // 3. 决定绘制模式
+            let threshold = 0;
+            let fuzzyMode = false;
+            if (!hasSignChange) {
+                // 不变号但 |F| 很小 → 近似模式（离散解集，如 sin(x)sin(y)=1）
+                if (minAbsF < 0.15) {
+                    threshold = minAbsF * 2;
+                    fuzzyMode = true;
+                } else {
+                    // 不变号且 |F| 不小 → 范围内确实无零点
+                    window.__lastDiag = { ...window.__lastDiagBase, noZero: true, fatal: false };
+                    return null;
+                }
+            }
+            window.__lastDiag = { ...window.__lastDiagBase, noZero: false, fuzzyMode, threshold };
+
+            // 4. Marching Squares：逐格在四边插值求等值点，连成线段
+            const lineSegments = [];
+            const V = (v) => isFinite(v) ? v : 1e9;
+            /**
+             * 提取 F=target 的等值线
+             * 对每个格子，检查四边是否跨越 target，在跨越边上线性插值求交点
+             * 2 个交点 → 1 条线段；4 个交点 → 2 条线段（鞍点）
+             */
+            const extractLevelSet = (target) => {
+                for (let i = 0; i < resolution; i++) {
+                    const x0 = start + i * step, x1 = x0 + step;
+                    for (let j = 0; j < resolution; j++) {
+                        const y0 = start + j * step, y1 = y0 + step;
+                        // 四角值减去 target，转化为求零点
+                        const v00 = V(f(x0, y0)) - target;
+                        const v10 = V(f(x1, y0)) - target;
+                        const v01 = V(f(x0, y1)) - target;
+                        const v11 = V(f(x1, y1)) - target;
+                        const pts = [];
+                        // 下边：v00-v10
+                        if ((v00<=0&&v10>=0)||(v00>=0&&v10<=0)) pts.push(new THREE.Vector3(x0 + Math.abs(v00)/(Math.abs(v00)+Math.abs(v10)+1e-10)*(x1-x0), y0, 0));
+                        // 右边：v10-v11
+                        if ((v10<=0&&v11>=0)||(v10>=0&&v11<=0)) pts.push(new THREE.Vector3(x1, y0 + Math.abs(v10)/(Math.abs(v10)+Math.abs(v11)+1e-10)*(y1-y0), 0));
+                        // 上边：v11-v01
+                        if ((v11<=0&&v01>=0)||(v11>=0&&v01<=0)) pts.push(new THREE.Vector3(x1 + Math.abs(v11)/(Math.abs(v11)+Math.abs(v01)+1e-10)*(x0-x1), y1, 0));
+                        // 左边：v01-v00
+                        if ((v01<=0&&v00>=0)||(v01>=0&&v00<=0)) pts.push(new THREE.Vector3(x0, y1 + Math.abs(v01)/(Math.abs(v01)+Math.abs(v00)+1e-10)*(y0-y1), 0));
+                        // 2 交点 → 1 线段；4 交点 → 2 线段
+                        if (pts.length === 2) lineSegments.push(pts[0], pts[1]);
+                        else if (pts.length === 4) { lineSegments.push(pts[0], pts[1]); lineSegments.push(pts[2], pts[3]); }
+                    }
+                }
+            };
+            // 近似模式画 ±threshold 两条等值线（形成蓝色环带）；正常模式只画 F=0
+            if (fuzzyMode) {
+                extractLevelSet(threshold);
+                extractLevelSet(-threshold);
+            } else {
+                extractLevelSet(0);
+            }
+            if (lineSegments.length === 0) return null;
+            // 近似模式统一蓝色，正常模式用指定颜色
+            return new THREE.LineSegments(
+                new THREE.BufferGeometry().setFromPoints(lineSegments),
+                new THREE.LineBasicMaterial({ color: fuzzyMode ? 0x66ccff : color })
+            );
+        }
+
+                // ==================== 显式曲面 ====================
+        /**
+         * 绘制显式曲面 z=f(x,y)
+         *
+         * 算法：
+         *   1. 在 [-R,R]×[-R,R] 上 (segments+1)² 个点采样 z
+         *   2. 把所有 z 值排序，得到每个顶点的「百分位排名」（不是线性比例）
+         *   3. 按百分位映射到 HSL 彩虹色环（蓝→青→绿→黄→橙→红）
+         *   4. 逐格生成两个三角形面片索引
+         *   5. computeVertexNormals 算平滑法线
+         *
+         * 为什么要用百分位而不是线性映射：
+         *   线性映射 (z-minZ)/rangeZ 在 z 分布偏一侧时（如高斯曲面大部分 z≈0）
+         *   会导致 80% 的区域颜色都挤在蓝色端，看起来整个曲面都是海蓝色。
+         *   分位数映射让每个顶点按"在整体中的排名"取色，
+         *   即使 z 值高度集中，颜色也能均匀铺满整个色环。
+         *
+         * @param {string} expr - 用户输入的表达式
+         * @param {number} range - 范围 ±R
+         * @param {number} segments - 每边分段数
+         * @param {number|null} color - null 时用彩虹顶点色（单函数），非 null 时用纯色（多函数叠加）
+         * @returns {THREE.Mesh|null} - 曲面网格
+         */
+        function drawSurface(expr, range = 3, segments = 60, color = null) {
+            const f = parseExpression(expr, ['x', 'y'], true);   // isExplicit=true，剥离 z= 前缀
+            if (!f) return null;
+            const vertices = [], indices = [], colors = [];
+            const step = (range * 2) / segments;
+            const start = -range;
+
+            // 1. 采样所有 z 值（按网格顺序存入一维数组，后续与顶点一一对应）
+            const zValues = [];
+            for (let i = 0; i <= segments; i++) {
+                for (let j = 0; j <= segments; j++) {
+                    let v;
+                    try { v = f(start + i*step, start + j*step); } catch (e) { v = 0; }
+                    if (!isFinite(v) || isNaN(v)) v = 0;
+                    zValues.push(v);
+                }
+            }
+
+            // 2. 计算分位数：
+            //    把 z 值排序成 sortedZ，对任意 z 用二分查找得到它的排名（0~1 的百分位）
+            const sortedZ = [...zValues].sort((a, b) => a - b);
+            const n = sortedZ.length;
+            /**
+             * 获取 z 在全部 z 值中的百分位排名
+             * @param {number} z - 当前顶点的 z 值
+             * @returns {number} - 0~1 之间的百分位（0=最小值，1=最大值）
+             */
+            const getPercentile = (z) => {
+                let lo = 0, hi = n - 1;
+                while (lo < hi) {
+                    const mid = (lo + hi) >> 1;
+                    if (sortedZ[mid] < z) lo = mid + 1;
+                    else hi = mid;
+                }
+                return n > 1 ? lo / (n - 1) : 0.5;
+            };
+
+            // 3. 生成顶点 + 颜色
+            let zIndex = 0;
+            for (let i = 0; i <= segments; i++) {
+                const x = start + i * step;
+                for (let j = 0; j <= segments; j++) {
+                    const y = start + j * step;
+                    const z = zValues[zIndex++];
+                    vertices.push(x, y, z);
+
+                    if (color !== null) {
+                        // 多函数叠加：纯色由材质决定，这里只需占位
+                        colors.push(1, 1, 1);
+                    } else {
+                        // 单函数：按百分位映射到 HSL 彩虹色环
+                        const p = getPercentile(z);        // 0~1 百分位
+                        const hue = 240 - 240 * p;         // 240°(蓝) → 0°(红)，中间经过青/绿/黄
+                        // 手动 HSL → RGB（s=0.85, l=0.55），避免每次 new THREE.Color
+                        const h = hue / 360;
+                        const s = 0.85, l = 0.55;
+                        const hue2rgb = (p1, q1, t1) => {
+                            if (t1 < 0) t1 += 1;
+                            if (t1 > 1) t1 -= 1;
+                            if (t1 < 1/6) return p1 + (q1 - p1) * 6 * t1;
+                            if (t1 < 1/2) return q1;
+                            if (t1 < 2/3) return p1 + (q1 - p1) * (2/3 - t1) * 6;
+                            return p1;
+                        };
+                        const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+                        const p1 = 2 * l - q;
+                        const r = hue2rgb(p1, q, h + 1/3);
+                        const g = hue2rgb(p1, q, h);
+                        const b = hue2rgb(p1, q, h - 1/3);
+                        colors.push(r, g, b);
+                    }
+                }
+            }
+
+            // 4. 逐格生成两个三角形 (a,b,c) + (b,d,c)
+            for (let i = 0; i < segments; i++) {
+                for (let j = 0; j < segments; j++) {
+                    const a = i*(segments+1)+j, b = i*(segments+1)+j+1, c = (i+1)*(segments+1)+j, d = (i+1)*(segments+1)+j+1;
+                    indices.push(a, b, c, b, d, c);
+                }
+            }
+
+            // 5. 构建 geometry：position + color + index
+            const geometry = new THREE.BufferGeometry();
+            geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+            if (color === null) {
+                // 单函数才设置顶点色
+                geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+            }
+            geometry.setIndex(indices);
+            geometry.computeVertexNormals();
+
+            // 6. 材质：多函数纯色半透明，单函数顶点色
+            if (color !== null) {
+                return new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({
+                    color: color, side: THREE.DoubleSide,
+                    roughness: 0.35, metalness: 0.1,
+                    transparent: true, opacity: 0.7
+                }));
+            }
+            return new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({
+                vertexColors: true, side: THREE.DoubleSide,
+                roughness: 0.35, metalness: 0.1,
+                transparent: true, opacity: 0.95
+            }));
+        }
+
+        // ==================== 显式曲线 ====================
+        /**
+         * 绘制显式曲线 y=f(x)（在 XY 平面，z=0）
+         *
+         * 算法：
+         *   1. 在 [-R,R] 上等距采样 segments+1 个点
+         *   2. 过滤掉 NaN/无穷点（如 1/x 在 x=0 处）
+         *   3. 用 CatmullRomCurve3 平滑插值，再生成 TubeGeometry 得到有粗细的管状曲线
+         *
+         * @param {string} expr - 用户输入的表达式
+         * @param {number} range - 范围 ±R
+         * @param {number} segments - 采样段数
+         * @param {number} color - 曲线颜色
+         * @returns {THREE.Mesh|null} - 管状曲线
+         */
+        function drawPlaneCurve(expr, range = 6, segments = 400, color = 0x00ffaa) {
+            // isExplicit=true：会剥离开头的 y= 或 z=（parseExpression 中正则依次匹配 [yz]），
+            // 因此用户写 "y=sin(x)" 或 "z=sin(x)" 都能被正确画出
+            const f = parseExpression(expr, ['x'], true);
+            if (!f) return null;
+            // 1. 采样并过滤无效点
+            const points = [];
+            for (let i = 0; i <= segments; i++) {
+                const x = -range + (2 * range * i) / segments;
+                let y;
+                try { y = f(x); } catch (e) { y = NaN; }
+                if (isFinite(y) && !isNaN(y)) points.push(new THREE.Vector3(x, y, 0));
+            }
+            if (points.length < 2) return null;
+            // 2. Catmull-Rom 平滑曲线 → 管状几何（半径 0.05，8 段截面）
+            const curve = new THREE.CatmullRomCurve3(points);
+            const tubeGeo = new THREE.TubeGeometry(curve, Math.min(500, points.length*2), 0.05, 8, false);
+            // 青色发光感材质
+            return new THREE.Mesh(tubeGeo, new THREE.MeshStandardMaterial({
+                color: color,
+                emissive: new THREE.Color(color).multiplyScalar(0.25),
+                roughness: 0.3
+            }));
+        }
+
+        // ==================== 主逻辑 ====================
+        // 当前场景中由本工具绘制出来的所有 mesh（多函数时是数组）
+        let currentMeshes = [];
+
+        /** 清理所有上次绘制的 mesh */
+        function clearAll() {
+            currentMeshes.forEach(mesh => {
+                scene.remove(mesh);
+                if (mesh.geometry) mesh.geometry.dispose();
+                if (mesh.material) {
+                    if (Array.isArray(mesh.material)) mesh.material.forEach(m => m.dispose());
+                    else mesh.material.dispose();
+                }
+            });
+            currentMeshes = [];
+        }
+
+        /**
+         * 主绘制流程（支持多函数逗号分隔叠加）：
+         *   1. 按顶层逗号分割成多个函数
+         *   2. 逐个绘制，每个用调色板中不同颜色
+         *   3. 汇总状态栏
+         *
+         * 用 setTimeout(20) 让"计算中..."先渲染出来，避免长任务卡 UI
+         */
+        function draw() {
+            const type = document.getElementById('funcType').value;
+            const formulaInput = document.getElementById('formula').value.trim();
+            const range = parseFloat(document.getElementById('rangeInput').value) || 5;
+            const res = parseInt(document.getElementById('resInput').value) || 150;
+            if (!formulaInput) { setStatus('请输入公式', 'err'); return; }
+
+            // 按顶层逗号分割（忽略括号内的逗号）
+            const formulas = splitByTopLevelComma(formulaInput);
+            if (formulas.length === 0) { setStatus('请输入公式', 'err'); return; }
+
+            rebuildAxes(range);
+            setStatus('计算中...', '');
+            // 重置诊断变量
+            window.__lastDiag = null;
+            window.__lastDiagBase = null;
+            window.__last3DDiag = null;
+            window.__lastConverted = null;
+            window.__funcDeclNotice = null;
+            clearAll();
+
+            // 异步执行重计算，让状态栏先重绘
+            setTimeout(() => {
+                const results = [];    // { formula, ok, color }
+                const meshes = [];
+                const isMulti = formulas.length > 1;
+
+                // 逐个绘制
+                for (let idx = 0; idx < formulas.length; idx++) {
+                    const formula = formulas[idx];
+                    const color = COLOR_PALETTE[idx % COLOR_PALETTE.length];
+                    let mesh = null;
+                    try {
+                        if (type === 'surface') {
+                            // 多函数用纯色，单函数保留顶点色美观
+                            mesh = drawSurface(formula, range, 60, isMulti ? color : null);
+                        } else if (type === 'implicit3d') {
+                             mesh = drawImplicit3D(formula, range, 48, isMulti ? color : null);
+                        } else if (type === 'implicit') {
+                            mesh = drawImplicit(formula, range, res, color);
+                        } else if (type === 'plane') {
+                            mesh = drawPlaneCurve(formula, range, 400, color);
+                        }
+                    } catch (e) {
+                        console.error(`函数 ${idx+1} 绘制出错:`, e);
+                        results.push({ formula, ok: false, color });
+                        continue;
+                    }
+                    if (mesh) {
+                        scene.add(mesh);
+                        meshes.push(mesh);
+                        results.push({ formula, ok: true, color });
+                    } else {
+                        results.push({ formula, ok: false, color });
+                    }
+                }
+                currentMeshes = meshes;
+
+                // 状态栏汇总
+                const okCount = results.filter(r => r.ok).length;
+                const total = results.length;
+                const converted = window.__lastConverted || '';
+                const notice = window.__funcDeclNotice || '';
+
+                if (okCount === 0) {
+                    // 全部失败
+                    let msg = `❌ 所有 ${total} 个函数均无法绘制\n\n`;
+                    results.forEach((r, i) => {
+                        msg += `  [${i+1}] ${r.formula}\n`;
+                    });
+                    const diag = window.__lastDiag;
+                    const diag3d = window.__last3DDiag;
+                    if (type === 'implicit3d' && diag3d) {
+                        msg += `\n采样点: 负=${diag3d.negCount}, 正=${diag3d.posCount}\n建议: 增大范围 或 提高分辨率`;
+                    } else if (diag && diag.fatal) {
+                        msg += `\n诊断: 有效采样点为 0（表达式可能有未定义变量，或全部超出定义域）`;
+                    } else if (diag && diag.noZero) {
+                        msg += `\n诊断: 范围内无零点，|F| 最小 = ${diag.minAbsF.toFixed(5)}`;
+                    }
+                    if (converted) msg += `\n\n最后一次转换: ${converted}`;
+                    setStatus(msg, 'err');
+                } else if (okCount === total && total === 1) {
+                    // 单函数成功
+                    const diag = window.__lastDiag;
+                    if (diag && diag.fuzzyMode) {
+                        setStatus(
+                            `✓ 绘制完成 (近似模式)\n` +
+                            `⚠️ 无严格零点 (离散解集)，已画 |F| = ${diag.threshold.toFixed(4)} 的等值线\n` +
+                            (notice ? `ℹ️ ${notice}\n` : '') +
+                            `转换后: ${converted}`,
+                            'ok'
+                        );
+                    } else {
+                        setStatus(`✓ 绘制完成${notice ? '\nℹ️ ' + notice : ''}\n转换后: ${converted}`, 'ok');
+                    }
+                } else {
+                    // 多函数：显示每个的成功/失败
+                    let msg = `✓ 绘制完成 ${okCount}/${total} 个函数\n`;
+                    results.forEach((r, i) => {
+                        const mark = r.ok ? '✓' : '✗';
+                        // 输出该函数在场景中的实际颜色（#RRGGBB），方便用户对照哪条线/面是哪个函数
+                        const colorHex = '#' + r.color.toString(16).padStart(6, '0');
+                        msg += `  ${mark} [${colorHex}] ${r.formula}\n`;
+                    });
+                    if (notice) msg += `ℹ️ ${notice}`;
+                    setStatus(msg.trim(), okCount === total ? 'ok' : 'warn');
+                }
+            }, 20);
+        }
+
+        // ==================== 样例选择 ====================
+        // 样例 value 格式 "类型:::公式"，选择后自动填充并触发绘制
+        document.getElementById('sampleSelect').addEventListener('change', (e) => {
+            const val = e.target.value;
+            if (!val) return;
+            // 用 ::: 分隔，公式里可能含冒号所以不用 split 的全部，只取第一段作类型
+            const [type, ...formulaParts] = val.split(':::');
+            const formula = formulaParts.join(':::');
+            document.getElementById('funcType').value = type;
+            document.getElementById('formula').value = formula;
+            // 不同类型给不同的默认范围/分辨率
+            const rangeInput = document.getElementById('rangeInput');
+            const resInput = document.getElementById('resInput');
+            if (type === 'implicit3d') { rangeInput.value = 2.5; resInput.value = 48; }
+            else if (type === 'surface') { rangeInput.value = 4; resInput.value = 60; }
+            else if (type === 'implicit') { rangeInput.value = 6; resInput.value = 250; }
+            else if (type === 'plane') { rangeInput.value = 6; resInput.value = 400; }
+            // 含 tan 的隐函数有奇点，缩小范围避免发散
+            if (formula.includes('tan') && type === 'implicit') { rangeInput.value = 4; resInput.value = 250; }
+            draw();
+        });
+
+        // ==================== 范围变化立即重建坐标轴 ====================
+        // 范围输入失焦时即时刷新坐标轴，无需等点击绘制
+        document.getElementById('rangeInput').addEventListener('change', (e) => {
+            const r = parseFloat(e.target.value) || 6;
+            rebuildAxes(r);
+        });
+
+        // ==================== 帮助面板折叠 ====================
+        const helpPanel = document.getElementById('helpPanel');
+        document.getElementById('helpHeader').addEventListener('click', () => {
+            helpPanel.classList.toggle('expanded');
+        });
+
+        // ==================== 控制面板折叠 ====================
+        const controlPanel = document.getElementById('controlPanel');
+        const collapseBtn = document.getElementById('collapseBtn');
+        collapseBtn.addEventListener('click', (e) => {
+            e.stopPropagation();   // 阻止冒泡到标题栏的拖动逻辑
+            controlPanel.classList.toggle('collapsed');
+            // 折叠时 CSS 的 .collapsed 规则用 !important 强制 width/height:auto，
+            // 覆盖了由 CSS 变量 --panel-width / --panel-height 控制的尺寸，
+            // 所以无论用户之前拖多大，折叠时背景框都会收缩到标题栏大小。
+            collapseBtn.textContent = controlPanel.classList.contains('collapsed') ? '展开' : '折叠';
+        });
+
+        // ==================== 面板拖动/调整（鼠标 + 触摸） ====================
+        // 拖动标题栏移动整个控制面板；拖动右下角手柄调整面板宽高
+        // 同时支持鼠标 (mousedown/mousemove/mouseup) 和触摸 (touchstart/touchmove/touchend)
+        // 触摸事件注意：
+        //   - 必须给被拖动元素设置 touch-action: none（在 CSS 里）
+        //   - touchmove 必须 passive: false 才能 preventDefault 阻止页面滚动
+        //   - 监听 touchcancel 防止来电等打断后卡在拖动状态
+        const panel = document.getElementById('controlPanel');
+        const header = document.getElementById('panelHeader');
+        const resizeHandle = document.getElementById('resizeHandle');
+
+        // ---------- 拖动 ----------
+        let isDragging = false, dragStartX = 0, dragStartY = 0, panelStartX = 0, panelStartY = 0;
+
+        /** 开始拖动（鼠标/触摸共用） */
+        function startDrag(clientX, clientY) {
+            isDragging = true;
+            dragStartX = clientX; dragStartY = clientY;
+            const rect = panel.getBoundingClientRect();
+            panelStartX = rect.left; panelStartY = rect.top;
+        }
+        /** 拖动中：限制在视口内移动 */
+        function moveDrag(clientX, clientY) {
+            if (!isDragging) return;
+            const dx = clientX - dragStartX, dy = clientY - dragStartY;
+            panel.style.left = Math.max(0, Math.min(window.innerWidth - panel.offsetWidth, panelStartX + dx)) + 'px';
+            panel.style.top = Math.max(0, Math.min(window.innerHeight - 60, panelStartY + dy)) + 'px';
+        }
+        /** 结束拖动 */
+        function endDrag() { isDragging = false; }
+
+        // 鼠标：按下标题栏开始拖（排除按钮/输入框等子元素）
+        header.addEventListener('mousedown', (e) => {
+            if (['BUTTON','SELECT','INPUT','TEXTAREA'].includes(e.target.tagName)) return;
+            startDrag(e.clientX, e.clientY);
+            e.preventDefault();
+        });
+        window.addEventListener('mousemove', (e) => moveDrag(e.clientX, e.clientY));
+        window.addEventListener('mouseup', endDrag);
+
+        // 触摸：按下标题栏开始拖（按钮/输入框不触发拖动）
+        header.addEventListener('touchstart', (e) => {
+            if (['BUTTON','SELECT','INPUT','TEXTAREA'].includes(e.target.tagName)) return;
+            const touch = e.touches[0];
+            startDrag(touch.clientX, touch.clientY);
+        }, { passive: true });
+        window.addEventListener('touchmove', (e) => {
+            if (!isDragging) return;
+            const touch = e.touches[0];
+            moveDrag(touch.clientX, touch.clientY);
+            e.preventDefault(); // 阻止页面滚动
+        }, { passive: false });
+        window.addEventListener('touchend', endDrag);
+        window.addEventListener('touchcancel', endDrag);
+
+        // ---------- 调整大小 ----------
+        let isResizing = false, resizeStartX = 0, resizeStartY = 0, startWidth = 0, startHeight = 0;
+
+        /** 开始调整大小 */
+        function startResize(clientX, clientY) {
+            isResizing = true;
+            resizeStartX = clientX; resizeStartY = clientY;
+            const rect = panel.getBoundingClientRect();
+            startWidth = rect.width; startHeight = rect.height;
+        }
+        /**
+         * 调整大小中：最小 400×400
+         * 关键修复：不写内联 style.width/height，而是写 CSS 自定义属性 --panel-width/--panel-height。
+         * 这样折叠时 .collapsed 的 width:auto !important 可以正常覆盖，不会被内联样式锁死。
+         */
+        function moveResize(clientX, clientY) {
+            if (!isResizing) return;
+            const newW = Math.max(400, startWidth + clientX - resizeStartX);
+            const newH = Math.max(400, startHeight + clientY - resizeStartY);
+            panel.style.setProperty('--panel-width', newW + 'px');
+            panel.style.setProperty('--panel-height', newH + 'px');
+        }
+        /** 结束调整 */
+        function endResize() { isResizing = false; }
+
+        // 鼠标
+        resizeHandle.addEventListener('mousedown', (e) => {
+            startResize(e.clientX, e.clientY);
+            e.preventDefault(); e.stopPropagation();
+        });
+        window.addEventListener('mousemove', (e) => moveResize(e.clientX, e.clientY));
+        window.addEventListener('mouseup', endResize);
+
+        // 触摸
+        resizeHandle.addEventListener('touchstart', (e) => {
+            const touch = e.touches[0];
+            startResize(touch.clientX, touch.clientY);
+            e.stopPropagation();
+        }, { passive: true });
+        window.addEventListener('touchmove', (e) => {
+            if (!isResizing) return;
+            const touch = e.touches[0];
+            moveResize(touch.clientX, touch.clientY);
+            e.preventDefault();
+        }, { passive: false });
+        window.addEventListener('touchend', endResize);
+        window.addEventListener('touchcancel', endResize);
+
+        // 面板内禁止文本选择（输入框和状态栏除外），避免拖动时选中文字
+        panel.addEventListener('selectstart', (e) => {
+            if (['INPUT','TEXTAREA'].includes(e.target.tagName)) return;
+            if (e.target.closest('#status')) return;   // 状态栏允许选择复制
+            e.preventDefault();
+        });
+
+        // ==================== 事件绑定 ====================
+        // 绘制按钮点击
+        document.getElementById('drawBtn').addEventListener('click', draw);
+        // 公式框 Ctrl/Cmd + Enter 快捷绘制
+        document.getElementById('formula').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); draw(); }
+        });
+        // 窗口尺寸变化：同步更新相机宽高比与渲染器尺寸
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            labelRenderer.setSize(window.innerWidth, window.innerHeight);
+        });
+        // 页面加载完成后自动绘制一次初始公式
+        window.addEventListener('load', () => setTimeout(draw, 100));
+
+        // ==================== 渲染循环 ====================
+        // requestAnimationFrame 持续渲染：OrbitControls 阻尼更新 + WebGL 渲染 + CSS2D 标签渲染
+        (function animate() {
+            requestAnimationFrame(animate);
+            controls.update();                  // 阻尼惯性更新
+            renderer.render(scene, camera);     // 3D 场景
+            labelRenderer.render(scene, camera); // HTML 标签
+        })();
+
+        console.log('✅ 加载完成。resize 用 CSS 变量存储，折叠时尺寸可被正常覆盖。');
+    </script>
+</body>
+</html>

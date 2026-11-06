@@ -1,0 +1,1156 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <title>二维随机迷宫 - 智能解密</title>
+  <style>
+    :root {
+      --bg-color: #0b0f17;
+      --panel-bg: rgba(18, 25, 38, 0.9);
+      --panel-border: rgba(255, 255, 255, 0.1);
+      --text-main: #f0f4f8;
+      --text-sub: #8ea0b4;
+      --accent-color: #00e5ff;
+      --accent-hover: #33ebff;
+      --wall-color: #1a2436;
+      --road-color: #080c13;
+      --start-color: #00e676;
+      --end-color: #ff1744;
+      --path-color: #00e5ff;
+      --ai-color: #ffb300;
+      --junction-color: rgba(0, 229, 255, 0.25);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    body {
+      background-color: var(--bg-color);
+      color: var(--text-main);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      overflow: hidden;
+      touch-action: none;
+    }
+
+    header {
+      width: 100%;
+      max-width: 1000px;
+      padding: 12px 16px;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      background: var(--panel-bg);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--panel-border);
+      z-index: 10;
+    }
+
+    .title-group {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .title-group h1 {
+      font-size: 1.15rem;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+      color: var(--text-main);
+    }
+
+    .back-link {
+      color: var(--text-sub);
+      text-decoration: none;
+      font-size: 0.9rem;
+      padding: 4px 8px;
+      border-radius: 4px;
+      border: 1px solid var(--panel-border);
+      transition: all 0.2s;
+    }
+
+    .back-link:hover {
+      color: var(--text-main);
+      border-color: var(--accent-color);
+    }
+
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+    }
+
+    select,
+    button {
+      background: rgba(255, 255, 255, 0.06);
+      color: var(--text-main);
+      border: 1px solid var(--panel-border);
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-size: 0.88rem;
+      cursor: pointer;
+      outline: none;
+      transition: all 0.2s ease;
+    }
+
+    select {
+      background: #182232;
+      color: #f0f4f8;
+      color-scheme: dark;
+    }
+
+    select option {
+      background-color: #182232;
+      color: #f0f4f8;
+    }
+
+    select:hover,
+    button:hover {
+      border-color: var(--accent-color);
+      background: rgba(0, 229, 255, 0.12);
+    }
+
+    button.primary {
+      background: var(--accent-color);
+      color: #050a10;
+      font-weight: 600;
+      border-color: var(--accent-color);
+    }
+
+    button.primary:hover {
+      background: var(--accent-hover);
+      box-shadow: 0 0 12px rgba(0, 229, 255, 0.4);
+    }
+
+    .status-bar {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      font-size: 0.88rem;
+      color: var(--text-sub);
+    }
+
+    .status-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .status-item span.val {
+      font-weight: 600;
+      color: var(--accent-color);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .legend-bar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: center;
+      gap: 14px;
+      padding: 8px 16px;
+      font-size: 0.82rem;
+      color: var(--text-sub);
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .legend-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+    }
+
+    .canvas-container {
+      flex: 1;
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 10px;
+      position: relative;
+    }
+
+    canvas {
+      display: block;
+      border-radius: 8px;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.7);
+      background: var(--road-color);
+      cursor: pointer;
+      touch-action: none;
+    }
+
+    .modal {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(10, 15, 24, 0.75);
+      backdrop-filter: blur(6px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+    }
+
+    .modal.active {
+      display: flex;
+    }
+
+    .modal-card {
+      background: #182232;
+      border: 1px solid var(--accent-color);
+      box-shadow: 0 0 30px rgba(0, 229, 255, 0.25);
+      border-radius: 12px;
+      padding: 24px 32px;
+      text-align: center;
+      max-width: 340px;
+      width: 90%;
+      animation: popIn 0.25s ease-out;
+    }
+
+    @keyframes popIn {
+      from {
+        transform: scale(0.85);
+        opacity: 0;
+      }
+
+      to {
+        transform: scale(1);
+        opacity: 1;
+      }
+    }
+
+    .modal-card h2 {
+      font-size: 1.5rem;
+      color: #00e676;
+      margin-bottom: 12px;
+    }
+
+    .modal-card p {
+      color: var(--text-sub);
+      font-size: 0.95rem;
+      margin-bottom: 20px;
+      line-height: 1.6;
+    }
+
+    .modal-card p strong {
+      color: var(--text-main);
+    }
+
+    .modal-card .btn-group {
+      display: flex;
+      justify-content: center;
+      gap: 12px;
+    }
+  </style>
+</head>
+
+<body>
+  <header>
+    <div class="title-group">
+      <a href="../index.html" class="back-link">← 返回主页</a>
+      <h1>二维随机迷宫</h1>
+    </div>
+
+    <div class="controls">
+      <select id="sizeSelect" title="调整迷宫尺寸与难度（16:9 宽屏）">
+        <option value="17x31">简单 (31 × 17)</option>
+        <option value="23x41" selected>普通 (41 × 23)</option>
+        <option value="31x55">高难 (55 × 31)</option>
+        <option value="41x73">地狱 (73 × 41)</option>
+        <option value="41x73_god">上帝 (73 × 41)</option>
+      </select>
+
+      <button id="genBtn" class="primary">重新生成</button>
+      <button id="clearPathBtn">清除重来</button>
+      <button id="solveBtn">自动寻路</button>
+    </div>
+
+    <div class="status-bar">
+      <div class="status-item">步数: <span id="stepCount" class="val">0</span></div>
+      <div class="status-item">用时: <span id="timerVal" class="val">00:00</span></div>
+    </div>
+  </header>
+
+  <div class="legend-bar">
+    <div class="legend-item">
+      <div class="legend-dot" style="background: var(--start-color)"></div>起点
+    </div>
+    <div class="legend-item">
+      <div class="legend-dot" style="background: var(--end-color)"></div>终点
+    </div>
+    <div class="legend-item">
+      <div class="legend-dot" style="background: var(--path-color)"></div>你的轨迹
+    </div>
+    <div class="legend-item">
+      <div class="legend-dot" style="background: var(--ai-color)"></div>AI提示
+    </div>
+    <div class="legend-item">💡 操作说明：支持<strong>按住拖拽</strong>或<strong>点击目标</strong>（同一直线无视路口直通，非直线自动滑行至分叉路口）</div>
+  </div>
+
+  <div class="canvas-container" id="container">
+    <canvas id="mazeCanvas"></canvas>
+
+    <div class="modal" id="winModal">
+      <div class="modal-card">
+        <h2>🎉 解密成功！</h2>
+        <p>
+          总用时：<strong id="finalTime">00:00</strong><br>
+          移动步数：<strong id="finalSteps">0</strong>
+        </p>
+        <div class="btn-group">
+          <button id="playAgainBtn" class="primary">再来一局</button>
+          <button id="nextLevelBtn">提高难度</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      "use strict";
+
+      let rows = 23;
+      let cols = 41;
+      let grid = []; // 0 为路，1 为墙
+      let start = { r: 1, c: 1 };
+      let end = { r: rows - 2, c: cols - 2 };
+
+      // 玩家路径点 [{r, c}]
+      let userPath = [];
+      let isDragging = false;
+      let isCompleted = false;
+      let isGodMode = false;
+      let aiPath = [];
+
+      // 迷雾离屏画布
+      const fogCanvas = document.createElement("canvas");
+      const fogCtx = fogCanvas.getContext("2d");
+
+      // 交互起点与指针吸附记录
+      let dragStartPos = null;
+      let hasDragged = false;
+
+      // 计时器状态
+      let timerInterval = null;
+      let startTime = null;
+      let elapsedSeconds = 0;
+
+      const canvas = document.getElementById("mazeCanvas");
+      const ctx = canvas.getContext("2d");
+      const container = document.getElementById("container");
+
+      const sizeSelect = document.getElementById("sizeSelect");
+      const genBtn = document.getElementById("genBtn");
+      const clearPathBtn = document.getElementById("clearPathBtn");
+      const solveBtn = document.getElementById("solveBtn");
+      const stepCountEl = document.getElementById("stepCount");
+      const timerValEl = document.getElementById("timerVal");
+      const winModal = document.getElementById("winModal");
+      const finalTimeEl = document.getElementById("finalTime");
+      const finalStepsEl = document.getElementById("finalSteps");
+      const playAgainBtn = document.getElementById("playAgainBtn");
+      const nextLevelBtn = document.getElementById("nextLevelBtn");
+
+      let cellSize = 0;
+
+      // ==========================================
+      // 1. 迷宫生成：改良混合生长树算法（极深迂回 + 高密干扰分支）
+      // ==========================================
+      function generateChallengingMaze(rCount, cCount) {
+        rows = rCount % 2 === 0 ? rCount + 1 : rCount;
+        cols = cCount % 2 === 0 ? cCount + 1 : cCount;
+
+        start = { r: 1, c: 1 };
+
+        // 全部初始化为墙壁 (1)
+        grid = Array.from({ length: rows }, () => new Uint8Array(cols).fill(1));
+
+        // 起点打通
+        grid[start.r][start.c] = 0;
+
+        // 待扩展活跃单元列表
+        const active = [{ r: start.r, c: start.c }];
+
+        const dirs = [
+          { dr: -2, dc: 0 },
+          { dr: 2, dc: 0 },
+          { dr: 0, dc: -2 },
+          { dr: 0, dc: 2 }
+        ];
+
+        while (active.length > 0) {
+          // 75% 概率选择最新单元（深度优先，形成极深蜿蜒长折返），25% 概率随机选择（注入密集分叉假象）
+          const isLatest = Math.random() < 0.75;
+          const idx = isLatest ? active.length - 1 : Math.floor(Math.random() * active.length);
+          const curr = active[idx];
+
+          const unvisitedNeighbors = [];
+          for (let i = 0; i < dirs.length; i++) {
+            const nr = curr.r + dirs[i].dr;
+            const nc = curr.c + dirs[i].dc;
+            if (nr > 0 && nr < rows - 1 && nc > 0 && nc < cols - 1) {
+              if (grid[nr][nc] === 1) {
+                unvisitedNeighbors.push({
+                  r: nr,
+                  c: nc,
+                  wallR: curr.r + dirs[i].dr / 2,
+                  wallC: curr.c + dirs[i].dc / 2
+                });
+              }
+            }
+          }
+
+          if (unvisitedNeighbors.length > 0) {
+            const next = unvisitedNeighbors[Math.floor(Math.random() * unvisitedNeighbors.length)];
+            grid[next.wallR][next.wallC] = 0;
+            grid[next.r][next.c] = 0;
+            active.push({ r: next.r, c: next.c });
+          } else {
+            // 该节点四周皆已打通，移除
+            active[idx] = active[active.length - 1];
+            active.pop();
+          }
+        }
+
+        // 针对高难与地狱难度：引入编织环路（Braid Loops），打破树状拓扑，使终点反推陷入回路陷阱
+        const isHell = rows >= 35 || cols >= 65;
+        const isHard = (rows >= 28 || cols >= 50) && !isHell;
+
+        if (isHell || isHard) {
+          applyBraidLoops(isHell ? 0.40 : 0.20);
+        }
+
+        // 智能优选终点：地狱难度锚定核心多分叉中枢，普通难度锚定极深死胡同
+        end = pickDeepestEndpoint(isHell);
+      }
+
+      // 将指定比例的死胡同打通为环形回路（Braid Maze）
+      function applyBraidLoops(ratio) {
+        const deadEnds = [];
+        for (let r = 1; r < rows - 1; r++) {
+          for (let c = 1; c < cols - 1; c++) {
+            if (grid[r][c] === 0 && getPassableDegree(r, c) === 1) {
+              deadEnds.push({ r, c });
+            }
+          }
+        }
+
+        const dirs = [
+          { dr: -1, dc: 0 },
+          { dr: 1, dc: 0 },
+          { dr: 0, dc: -1 },
+          { dr: 0, dc: 1 }
+        ];
+
+        // 随机挑选指定比例的死胡同进行破壁连接
+        for (let i = 0; i < deadEnds.length; i++) {
+          if (Math.random() > ratio) continue;
+          const de = deadEnds[i];
+          const candidates = [];
+
+          for (let d = 0; d < dirs.length; d++) {
+            const wallR = de.r + dirs[d].dr;
+            const wallC = de.c + dirs[d].dc;
+            const targetR = de.r + dirs[d].dr * 2;
+            const targetC = de.c + dirs[d].dc * 2;
+
+            if (targetR > 0 && targetR < rows - 1 && targetC > 0 && targetC < cols - 1) {
+              if (grid[wallR][wallC] === 1 && grid[targetR][targetC] === 0) {
+                candidates.push({ wallR, wallC });
+              }
+            }
+          }
+
+          if (candidates.length > 0) {
+            const picked = candidates[Math.floor(Math.random() * candidates.length)];
+            grid[picked.wallR][picked.wallC] = 0;
+          }
+        }
+      }
+
+      // 计算全图拓扑距离，优选极深终点（地狱难度优先选择多分叉中枢）
+      function pickDeepestEndpoint(isHell) {
+        const queue = [start];
+        const dist = Array.from({ length: rows }, () => new Int32Array(cols).fill(-1));
+        dist[start.r][start.c] = 0;
+
+        const dirs = [
+          { dr: -1, dc: 0 },
+          { dr: 1, dc: 0 },
+          { dr: 0, dc: -1 },
+          { dr: 0, dc: 1 }
+        ];
+
+        let maxScore = -1;
+        let bestTarget = { r: rows - 2, c: cols - 2 };
+
+        while (queue.length > 0) {
+          const cur = queue.shift();
+          const d = dist[cur.r][cur.c];
+
+          // 限制终点在右下区域（行 >= 50%，列 >= 50%）
+          if (cur.r >= Math.floor(rows * 0.5) && cur.c >= Math.floor(cols * 0.5)) {
+            const deg = getPassableDegree(cur.r, cur.c);
+            let score = d;
+
+            if (isHell) {
+              // 地狱难度：优先选择出度 >= 3 的核心交汇中枢，出门即多岔路，彻底封死反推
+              score += (deg >= 3 ? 120 : (deg === 2 ? 30 : -60));
+            } else {
+              // 普通难度：出度为 1 的深死胡同最佳
+              score += (deg === 1 ? 50 : 0);
+            }
+
+            if (score > maxScore) {
+              maxScore = score;
+              bestTarget = { r: cur.r, c: cur.c };
+            }
+          }
+
+          for (let i = 0; i < dirs.length; i++) {
+            const nr = cur.r + dirs[i].dr;
+            const nc = cur.c + dirs[i].dc;
+            if (nr >= 0 && nr < rows && nc >= 0 && nc < cols && grid[nr][nc] === 0 && dist[nr][nc] === -1) {
+              dist[nr][nc] = d + 1;
+              queue.push({ r: nr, c: nc });
+            }
+          }
+        }
+
+        // 若地狱难度下终点出度仍小于 3，尝试打通一面相邻隔墙强行升级为多分叉中枢
+        if (isHell && getPassableDegree(bestTarget.r, bestTarget.c) < 3) {
+          for (let d = 0; d < dirs.length; d++) {
+            const wr = bestTarget.r + dirs[d].dr;
+            const wc = bestTarget.c + dirs[d].dc;
+            const tr = bestTarget.r + dirs[d].dr * 2;
+            const tc = bestTarget.c + dirs[d].dc * 2;
+            if (tr > 0 && tr < rows - 1 && tc > 0 && tc < cols - 1) {
+              if (grid[wr][wc] === 1 && grid[tr][tc] === 0) {
+                grid[wr][wc] = 0;
+                break;
+              }
+            }
+          }
+        }
+
+        grid[bestTarget.r][bestTarget.c] = 0;
+        return bestTarget;
+      }
+
+      // ==========================================
+      // 2. 局部与全局拓扑寻路 (BFS)
+      // ==========================================
+      function findPathBFS(fromNode, toNode) {
+        if (fromNode.r === toNode.r && fromNode.c === toNode.c) {
+          return [fromNode];
+        }
+
+        const queue = [fromNode];
+        const visited = Array.from({ length: rows }, () => new Uint8Array(cols).fill(0));
+        const parent = Array.from({ length: rows }, () => new Array(cols).fill(null));
+
+        visited[fromNode.r][fromNode.c] = 1;
+        let reached = false;
+
+        const dirs = [
+          { dr: -1, dc: 0 },
+          { dr: 1, dc: 0 },
+          { dr: 0, dc: -1 },
+          { dr: 0, dc: 1 }
+        ];
+
+        while (queue.length > 0) {
+          const cur = queue.shift();
+          if (cur.r === toNode.r && cur.c === toNode.c) {
+            reached = true;
+            break;
+          }
+
+          for (let i = 0; i < dirs.length; i++) {
+            const nr = cur.r + dirs[i].dr;
+            const nc = cur.c + dirs[i].dc;
+
+            if (nr >= 0 && nr < rows && nc >= 0 && nc < cols) {
+              if (grid[nr][nc] === 0 && !visited[nr][nc]) {
+                visited[nr][nc] = 1;
+                parent[nr][nc] = cur;
+                queue.push({ r: nr, c: nc });
+              }
+            }
+          }
+        }
+
+        if (!reached) return [];
+
+        const path = [];
+        let curr = toNode;
+        while (curr) {
+          path.push(curr);
+          curr = parent[curr.r][curr.c];
+        }
+        return path.reverse();
+      }
+
+      // 计算某格周围的通路邻居数量（度数）
+      function getPassableDegree(r, c) {
+        let count = 0;
+        const dirs = [
+          { dr: -1, dc: 0 },
+          { dr: 1, dc: 0 },
+          { dr: 0, dc: -1 },
+          { dr: 0, dc: 1 }
+        ];
+        for (let i = 0; i < dirs.length; i++) {
+          const nr = r + dirs[i].dr;
+          const nc = c + dirs[i].dc;
+          if (nr >= 0 && nr < rows && nc >= 0 && nc < cols && grid[nr][nc] === 0) {
+            count++;
+          }
+        }
+        return count;
+      }
+
+      // 检查两点是否在同一直线上且中间无墙体阻挡
+      function checkStraightPassable(p1, p2) {
+        if (p1.r === p2.r && p1.c !== p2.c) {
+          const step = p2.c > p1.c ? 1 : -1;
+          for (let c = p1.c + step; ; c += step) {
+            if (grid[p1.r][c] === 1) return false;
+            if (c === p2.c) return true;
+          }
+        } else if (p1.c === p2.c && p1.r !== p2.r) {
+          const step = p2.r > p1.r ? 1 : -1;
+          for (let r = p1.r + step; ; r += step) {
+            if (grid[r][p1.c] === 1) return false;
+            if (r === p2.r) return true;
+          }
+        }
+        return false;
+      }
+
+      // ==========================================
+      // 3. 点击自动巡航逻辑（直线直达，非直线遇到分叉停）
+      // ==========================================
+      function cruiseToJunction(targetPos) {
+        if (isCompleted) return;
+
+        const head = userPath[userPath.length - 1];
+        if (head.r === targetPos.r && head.c === targetPos.c) return;
+
+        let effectiveTarget = { r: targetPos.r, c: targetPos.c };
+
+        // 如果点击的是同一直线上的墙壁，自动修正为墙壁前最近的可行通路
+        if (head.r === targetPos.r && head.c !== targetPos.c && grid[targetPos.r][targetPos.c] === 1) {
+          const step = targetPos.c > head.c ? 1 : -1;
+          let lastPassableC = head.c;
+          for (let c = head.c + step; c !== targetPos.c + step; c += step) {
+            if (grid[head.r][c] === 1) break;
+            lastPassableC = c;
+          }
+          if (lastPassableC !== head.c) {
+            effectiveTarget = { r: head.r, c: lastPassableC };
+          }
+        } else if (head.c === targetPos.c && head.r !== targetPos.r && grid[targetPos.r][targetPos.c] === 1) {
+          const step = targetPos.r > head.r ? 1 : -1;
+          let lastPassableR = head.r;
+          for (let r = head.r + step; r !== targetPos.r + step; r += step) {
+            if (grid[r][head.c] === 1) break;
+            lastPassableR = r;
+          }
+          if (lastPassableR !== head.r) {
+            effectiveTarget = { r: lastPassableR, c: head.c };
+          }
+        }
+
+        if (grid[effectiveTarget.r][effectiveTarget.c] === 1) return;
+
+        // 判定是否属于同一直线无阻隔通路
+        const isStraight = checkStraightPassable(head, effectiveTarget);
+
+        if (isStraight) {
+          // 直线直达模式：不考虑沿途路口，直接走到目标点
+          startTimer();
+          const stepR = effectiveTarget.r === head.r ? 0 : (effectiveTarget.r > head.r ? 1 : -1);
+          const stepC = effectiveTarget.c === head.c ? 0 : (effectiveTarget.c > head.c ? 1 : -1);
+
+          let curR = head.r;
+          let curC = head.c;
+          while (curR !== effectiveTarget.r || curC !== effectiveTarget.c) {
+            curR += stepR;
+            curC += stepC;
+            userPath.push({ r: curR, c: curC });
+
+            if (curR === end.r && curC === end.c) {
+              handleWin();
+              return;
+            }
+          }
+
+          stepCountEl.textContent = String(Math.max(userPath.length - 1, 0));
+          render();
+          return;
+        }
+
+        // 非直线模式：获取通往目标格的最短连通路径，遇到分叉路口 (Degree >= 3) 即停止
+        const shortest = findPathBFS(head, effectiveTarget);
+        if (shortest.length <= 1) return;
+
+        startTimer();
+
+        for (let i = 1; i < shortest.length; i++) {
+          const step = shortest[i];
+          userPath.push({ r: step.r, c: step.c });
+
+          if (step.r === end.r && step.c === end.c) {
+            handleWin();
+            return;
+          }
+
+          if (step.r === effectiveTarget.r && step.c === effectiveTarget.c) {
+            break;
+          }
+
+          if (getPassableDegree(step.r, step.c) >= 3) {
+            break;
+          }
+        }
+
+        stepCountEl.textContent = String(Math.max(userPath.length - 1, 0));
+        render();
+      }
+
+      // ==========================================
+      // 4. 视口自适应与渲染
+      // ==========================================
+      function resizeCanvas() {
+        const dpr = window.devicePixelRatio || 1;
+        const rect = container.getBoundingClientRect();
+        const availableW = Math.max(rect.width - 20, 240);
+        const availableH = Math.max(rect.height - 20, 240);
+
+        cellSize = Math.floor(Math.min(availableW / cols, availableH / rows));
+        cellSize = Math.max(cellSize, 6);
+
+        const displayWidth = cellSize * cols;
+        const displayHeight = cellSize * rows;
+
+        canvas.width = displayWidth * dpr;
+        canvas.height = displayHeight * dpr;
+        canvas.style.width = `${displayWidth}px`;
+        canvas.style.height = `${displayHeight}px`;
+
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.scale(dpr, dpr);
+
+        render();
+      }
+
+      function render() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // 绘制通路背景
+        ctx.fillStyle = "#080c13";
+        ctx.fillRect(0, 0, cols * cellSize, rows * cellSize);
+
+        // 绘制墙壁
+        ctx.fillStyle = "#1a2436";
+        for (let r = 0; r < rows; r++) {
+          for (let c = 0; c < cols; c++) {
+            if (grid[r][c] === 1) {
+              ctx.fillRect(c * cellSize, r * cellSize, cellSize, cellSize);
+            }
+          }
+        }
+
+        // 绘制 AI 辅助寻路虚线
+        if (aiPath.length > 1) {
+          ctx.beginPath();
+          ctx.lineWidth = Math.max(cellSize * 0.28, 2);
+          ctx.strokeStyle = "rgba(255, 179, 0, 0.8)";
+          ctx.lineCap = "round";
+          ctx.lineJoin = "round";
+          ctx.setLineDash([Math.max(cellSize * 0.3, 3), Math.max(cellSize * 0.2, 2)]);
+          ctx.moveTo(aiPath[0].c * cellSize + cellSize / 2, aiPath[0].r * cellSize + cellSize / 2);
+          for (let i = 1; i < aiPath.length; i++) {
+            ctx.lineTo(aiPath[i].c * cellSize + cellSize / 2, aiPath[i].r * cellSize + cellSize / 2);
+          }
+          ctx.stroke();
+          ctx.setLineDash([]);
+        }
+
+        // 绘制玩家已走路径
+        if (userPath.length > 0) {
+          ctx.beginPath();
+          ctx.lineWidth = Math.max(cellSize * 0.45, 3);
+          ctx.strokeStyle = "#00e5ff";
+          ctx.lineCap = "round";
+          ctx.lineJoin = "round";
+          ctx.shadowColor = "#00e5ff";
+          ctx.shadowBlur = 8;
+          ctx.moveTo(userPath[0].c * cellSize + cellSize / 2, userPath[0].r * cellSize + cellSize / 2);
+          for (let i = 1; i < userPath.length; i++) {
+            ctx.lineTo(userPath[i].c * cellSize + cellSize / 2, userPath[i].r * cellSize + cellSize / 2);
+          }
+          ctx.stroke();
+          ctx.shadowBlur = 0;
+
+          // 绘制端点光晕指引
+          const head = userPath[userPath.length - 1];
+          ctx.beginPath();
+          ctx.fillStyle = "#ffffff";
+          ctx.arc(head.c * cellSize + cellSize / 2, head.r * cellSize + cellSize / 2, cellSize * 0.26, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        // 起点与终点始终标记
+        drawPoint(start.r, start.c, "#00e676", "S");
+        drawPoint(end.r, end.c, "#ff1744", "E");
+
+        // 上帝模式：覆盖动态战争迷雾（通关后迷雾消散展露全貌）
+        if (isGodMode && !isCompleted) {
+          const head = userPath[userPath.length - 1];
+          renderFogOfWar(head);
+
+          // 迷雾之上始终浮现终点灯塔，保证方位清晰可见
+          drawPoint(end.r, end.c, "#ff1744", "E");
+        }
+      }
+
+      function renderFogOfWar(head) {
+        const dpr = window.devicePixelRatio || 1;
+        const w = cols * cellSize;
+        const h = rows * cellSize;
+
+        fogCanvas.width = canvas.width;
+        fogCanvas.height = canvas.height;
+        fogCtx.setTransform(1, 0, 0, 1, 0, 0);
+        fogCtx.scale(dpr, dpr);
+
+        // 1. 涂满纯黑浓雾
+        fogCtx.fillStyle = "#070a0f";
+        fogCtx.fillRect(0, 0, w, h);
+
+        // 2. destination-out 挖开视野
+        fogCtx.globalCompositeOperation = "destination-out";
+
+        // 终点信标常亮微光（灯塔视野，半径 2.5 格）
+        const ex = end.c * cellSize + cellSize / 2;
+        const ey = end.r * cellSize + cellSize / 2;
+        const endGrad = fogCtx.createRadialGradient(ex, ey, cellSize * 0.4, ex, ey, cellSize * 2.5);
+        endGrad.addColorStop(0, "rgba(0, 0, 0, 1)");
+        endGrad.addColorStop(0.6, "rgba(0, 0, 0, 0.7)");
+        endGrad.addColorStop(1, "rgba(0, 0, 0, 0)");
+        fogCtx.fillStyle = endGrad;
+        fogCtx.beginPath();
+        fogCtx.arc(ex, ey, cellSize * 2.5, 0, Math.PI * 2);
+        fogCtx.fill();
+
+        // 走过历史轨迹的记忆微光
+        for (let i = 0; i < userPath.length; i += 2) {
+          const p = userPath[i];
+          const px = p.c * cellSize + cellSize / 2;
+          const py = p.r * cellSize + cellSize / 2;
+          const rGrad = fogCtx.createRadialGradient(px, py, cellSize * 0.4, px, py, cellSize * 2.0);
+          rGrad.addColorStop(0, "rgba(0, 0, 0, 0.8)");
+          rGrad.addColorStop(1, "rgba(0, 0, 0, 0)");
+          fogCtx.fillStyle = rGrad;
+          fogCtx.beginPath();
+          fogCtx.arc(px, py, cellSize * 2.0, 0, Math.PI * 2);
+          fogCtx.fill();
+        }
+
+        // 当前位置的强光视野探照灯
+        const hx = head.c * cellSize + cellSize / 2;
+        const hy = head.r * cellSize + cellSize / 2;
+        const headGrad = fogCtx.createRadialGradient(hx, hy, cellSize * 1.5, hx, hy, cellSize * 4.5);
+        headGrad.addColorStop(0, "rgba(0, 0, 0, 1)");
+        headGrad.addColorStop(0.75, "rgba(0, 0, 0, 0.85)");
+        headGrad.addColorStop(1, "rgba(0, 0, 0, 0)");
+        fogCtx.fillStyle = headGrad;
+        fogCtx.beginPath();
+        fogCtx.arc(hx, hy, cellSize * 4.5, 0, Math.PI * 2);
+        fogCtx.fill();
+
+        // 3. 将迷雾盖回主画布
+        ctx.drawImage(fogCanvas, 0, 0, w, h);
+      }
+
+      function drawPoint(r, c, color, text) {
+      const cx = c * cellSize + cellSize / 2;
+      const cy = r * cellSize + cellSize / 2;
+      const radius = cellSize * 0.4;
+
+      ctx.beginPath();
+      ctx.fillStyle = color;
+      ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = "#ffffff";
+      ctx.font = `bold ${Math.max(cellSize * 0.45, 9)}px sans-serif`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(text, cx, cy);
+    }
+
+    // ==========================================
+    // 5. 交互引擎：吸附拖拽 + 点击一键巡航
+    // ==========================================
+    function getGridPos(e) {
+      const rect = canvas.getBoundingClientRect();
+      const col = Math.floor((e.clientX - rect.left) / cellSize);
+      const row = Math.floor((e.clientY - rect.top) / cellSize);
+      return { r: row, c: col };
+    }
+
+    function startTimer() {
+      if (timerInterval) return;
+      startTime = Date.now() - elapsedSeconds * 1000;
+      timerInterval = setInterval(() => {
+        elapsedSeconds = Math.floor((Date.now() - startTime) / 1000);
+        const mins = String(Math.floor(elapsedSeconds / 60)).padStart(2, "0");
+        const secs = String(elapsedSeconds % 60).padStart(2, "0");
+        timerValEl.textContent = `${mins}:${secs}`;
+      }, 1000);
+    }
+
+    function stopTimer() {
+      if (timerInterval) {
+        clearInterval(timerInterval);
+        timerInterval = null;
+      }
+    }
+
+    function resetTimer() {
+      stopTimer();
+      elapsedSeconds = 0;
+      timerValEl.textContent = "00:00";
+    }
+
+    // 寻找坐标附近最接近当前端点的有效通路格（防止擦墙卡死）
+    function findClosestPassableNear(targetPos, head) {
+      if (targetPos.r >= 0 && targetPos.r < rows && targetPos.c >= 0 && targetPos.c < cols) {
+        if (grid[targetPos.r][targetPos.c] === 0) return targetPos;
+      }
+
+      // 检查其周围 1 格的通路候选，优先选择距离 head 最近的通路
+      const neighbors = [
+        { r: targetPos.r - 1, c: targetPos.c },
+        { r: targetPos.r + 1, c: targetPos.c },
+        { r: targetPos.r, c: targetPos.c - 1 },
+        { r: targetPos.r, c: targetPos.c + 1 }
+      ];
+
+      let best = null;
+      let bestDist = Infinity;
+
+      for (let i = 0; i < neighbors.length; i++) {
+        const nb = neighbors[i];
+        if (nb.r >= 0 && nb.r < rows && nb.c >= 0 && nb.c < cols && grid[nb.r][nb.c] === 0) {
+          const dist = Math.abs(nb.r - head.r) + Math.abs(nb.c - head.c);
+          if (dist < bestDist) {
+            bestDist = dist;
+            best = nb;
+          }
+        }
+      }
+      return best;
+    }
+
+    function onPointerDown(e) {
+      if (isCompleted) return;
+      const pos = getGridPos(e);
+      if (pos.r < 0 || pos.r >= rows || pos.c < 0 || pos.c >= cols) return;
+
+      dragStartPos = pos;
+      hasDragged = false;
+      isDragging = true;
+      canvas.setPointerCapture(e.pointerId);
+
+      // 如果点击了已走过的历史节点，瞬间撤销回退到该节点
+      for (let i = userPath.length - 2; i >= 0; i--) {
+        if (userPath[i].r === pos.r && userPath[i].c === pos.c) {
+          userPath = userPath.slice(0, i + 1);
+          stepCountEl.textContent = String(Math.max(userPath.length - 1, 0));
+          render();
+          startTimer();
+          return;
+        }
+      }
+    }
+
+    function onPointerMove(e) {
+      if (!isDragging || isCompleted) return;
+
+      const rawPos = getGridPos(e);
+      const head = userPath[userPath.length - 1];
+
+      // 标记已产生实质位移拖拽
+      if (rawPos.r !== dragStartPos.r || rawPos.c !== dragStartPos.c) {
+        hasDragged = true;
+      }
+
+      // 吸附计算：即使稍微触墙，自动定位最接近的合法通路
+      const pos = findClosestPassableNear(rawPos, head);
+      if (!pos) return;
+
+      // 若处于当前端点内，无需动作
+      if (pos.r === head.r && pos.c === head.c) return;
+
+      // 1. 回退检测：如果移向了倒数第二个点，自动弹栈一步
+      if (userPath.length > 1) {
+        const prev = userPath[userPath.length - 2];
+        if (pos.r === prev.r && pos.c === prev.c) {
+          userPath.pop();
+          stepCountEl.textContent = String(Math.max(userPath.length - 1, 0));
+          render();
+          return;
+        }
+      }
+
+      // 2. 连续吸附推进：采用局部 BFS 插值（最大容差 3 步内），消除过弯碰墙卡死
+      const subPath = findPathBFS(head, pos);
+      if (subPath.length >= 2 && subPath.length <= 4) {
+        // 接驳中间的所有平滑插值点
+        for (let i = 1; i < subPath.length; i++) {
+          userPath.push({ r: subPath[i].r, c: subPath[i].c });
+        }
+        stepCountEl.textContent = String(Math.max(userPath.length - 1, 0));
+        render();
+        startTimer();
+
+        if (pos.r === end.r && pos.c === end.c) {
+          handleWin();
+        }
+      }
+    }
+
+    function onPointerUp(e) {
+      if (isDragging) {
+        try {
+          if (canvas.hasPointerCapture(e.pointerId)) {
+            canvas.releasePointerCapture(e.pointerId);
+          }
+        } catch (_) { }
+        isDragging = false;
+
+        // 如果没有发生显著拖动（纯点击），触发“一键巡航至下一个分叉路口”
+        if (!hasDragged && dragStartPos) {
+          cruiseToJunction(dragStartPos);
+        }
+      }
+    }
+
+    function handleWin() {
+      isCompleted = true;
+      isDragging = false;
+      stopTimer();
+
+      finalTimeEl.textContent = timerValEl.textContent;
+      finalStepsEl.textContent = stepCountEl.textContent;
+      winModal.classList.add("active");
+    }
+
+    function resetGame(newRows, newCols, isGod = false) {
+      isCompleted = false;
+      isDragging = false;
+      aiPath = [];
+      isGodMode = isGod;
+      winModal.classList.remove("active");
+      resetTimer();
+
+      // 上帝难度：移除自动寻路和清除重来按钮
+      clearPathBtn.style.display = isGodMode ? "none" : "";
+      solveBtn.style.display = isGodMode ? "none" : "";
+
+      generateChallengingMaze(newRows, newCols);
+      userPath = [{ r: start.r, c: start.c }];
+      stepCountEl.textContent = "0";
+
+      resizeCanvas();
+    }
+
+    function clearUserPath() {
+      if (isCompleted || isGodMode) return;
+      userPath = [{ r: start.r, c: start.c }];
+      stepCountEl.textContent = "0";
+      render();
+    }
+
+    // 事件监听
+    canvas.addEventListener("pointerdown", onPointerDown);
+    canvas.addEventListener("pointermove", onPointerMove);
+    canvas.addEventListener("pointerup", onPointerUp);
+    canvas.addEventListener("pointercancel", onPointerUp);
+
+    function getSelectedConfig() {
+      const val = sizeSelect.value;
+      const isGod = val.endsWith("_god");
+      const cleanVal = isGod ? val.replace("_god", "") : val;
+      const [r, c] = cleanVal.split("x").map(Number);
+      return { r, c, isGod };
+    }
+
+    sizeSelect.addEventListener("change", () => {
+      const { r, c, isGod } = getSelectedConfig();
+      resetGame(r, c, isGod);
+    });
+
+    genBtn.addEventListener("click", () => {
+      const { r, c, isGod } = getSelectedConfig();
+      resetGame(r, c, isGod);
+    });
+
+    clearPathBtn.addEventListener("click", clearUserPath);
+
+    solveBtn.addEventListener("click", () => {
+      if (isGodMode) return;
+      aiPath = findPathBFS(start, end);
+      render();
+    });
+
+    playAgainBtn.addEventListener("click", () => {
+      const { r, c, isGod } = getSelectedConfig();
+      resetGame(r, c, isGod);
+    });
+
+    nextLevelBtn.addEventListener("click", () => {
+      const options = Array.from(sizeSelect.options);
+      const curIndex = sizeSelect.selectedIndex;
+      if (curIndex < options.length - 1) {
+        sizeSelect.selectedIndex = curIndex + 1;
+      }
+      const { r, c, isGod } = getSelectedConfig();
+      resetGame(r, c, isGod);
+    });
+
+    window.addEventListener("resize", resizeCanvas);
+
+    // 启动
+    const { r: initR, c: initC, isGod: initGod } = getSelectedConfig();
+    resetGame(initR, initC, initGod);
+    }) ();
+  </script>
+</body>
+
+</html>

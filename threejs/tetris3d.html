@@ -1,0 +1,1434 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Three.js 3D 俄罗斯方块 · 奇异形状 · 颗粒方块 · 音效 · 计分</title>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            margin: 0; overflow: hidden;
+            font-family: "Microsoft YaHei", "Segoe UI", sans-serif;
+            background: radial-gradient(ellipse at 50% 40%, #1a1a3a 0%, #0a0a1a 50%, #05050a 100%);
+            color: #e8ecf4;
+            touch-action: none;
+            -webkit-user-select: none; user-select: none;
+        }
+        #canvasWrap { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; }
+
+        #dragHandle {
+            position: fixed;
+            display: none;
+            padding: 4px 12px;
+            font-size: 11px; color: #4fffd6;
+            background: rgba(79, 255, 214, 0.14);
+            border: 1px solid rgba(79, 255, 214, 0.55);
+            border-radius: 8px;
+            cursor: grab;
+            z-index: 15;
+            pointer-events: auto;
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: none;
+            letter-spacing: 1px;
+            box-shadow: 0 0 14px rgba(79, 255, 214, 0.25);
+            backdrop-filter: blur(4px);
+            text-align: center;
+            white-space: nowrap;
+        }
+        #dragHandle:active { cursor: grabbing; background: rgba(79, 255, 214, 0.3); }
+
+        #sidePanel {
+            position: fixed; top: 16px; right: 16px;
+            padding: 12px 13px;
+            background: rgba(8, 12, 24, 0.78);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(120, 200, 255, 0.4);
+            border-radius: 14px;
+            box-shadow: 0 0 24px rgba(79, 255, 214, 0.25), 0 0 48px rgba(79, 157, 255, 0.15), 0 8px 32px rgba(0, 0, 0, 0.55);
+            z-index: 10; min-width: 112px;
+            pointer-events: none;
+            display: flex; flex-direction: column; gap: 8px;
+        }
+        #sidePanel .row { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; padding: 2px 0; }
+        #sidePanel .label { font-size: 10px; color: #7f92ad; letter-spacing: 0.5px; }
+        #sidePanel .value { font-size: 17px; font-weight: bold; font-family: 'Consolas', 'Courier New', monospace; color: #4fffd6; text-shadow: 0 0 12px rgba(79, 255, 214, 0.5); }
+        #sidePanel .value.small { font-size: 13px; color: #ffd24f; text-shadow: 0 0 10px rgba(255, 210, 79, 0.4); }
+        #sidePanel .panel-divider { height: 1px; background: rgba(120, 200, 255, 0.2); margin: 2px 0; }
+        #sidePanel .next-section { text-align: center; }
+        #sidePanel .next-section .label { font-size: 10px; color: #7f92ad; letter-spacing: 0.5px; margin-bottom: 4px; }
+        #nextCanvas { width: 45px; height: 45px; border-radius: 5px; background: rgba(0, 0, 0, 0.35); }
+
+        #resetViewBtn {
+            margin-top: 2px;
+            padding: 6px 10px;
+            font-size: 11px; letter-spacing: 0.5px;
+            color: #4fffd6; cursor: pointer;
+            background: rgba(79, 255, 214, 0.12);
+            border: 1px solid rgba(79, 255, 214, 0.4);
+            border-radius: 8px;
+            pointer-events: auto;
+            transition: background 0.15s;
+            font-family: inherit;
+        }
+        #resetViewBtn:hover { background: rgba(79, 255, 214, 0.25); }
+        #resetViewBtn:active { background: rgba(79, 255, 214, 0.35); }
+
+        #touchPad {
+            position: fixed; left: 0; right: 0; bottom: 0;
+            display: none; justify-content: space-between;
+            align-items: flex-end;
+            padding: 0 14px calc(12px + env(safe-area-inset-bottom, 0px));
+            z-index: 20; pointer-events: none;
+            background: linear-gradient(to top, rgba(3,5,12,0.85), rgba(3,5,12,0));
+        }
+        #touchPad.show { display: flex; }
+
+        .dpad { display: grid; grid-template-columns: repeat(3, 52px); grid-template-rows: repeat(2, 52px); gap: 7px; pointer-events: none; }
+        .actions { display: grid; grid-template-columns: 52px; grid-template-rows: repeat(2, 52px); gap: 7px; pointer-events: none; }
+
+        #touchPad button {
+            pointer-events: auto;
+            width: 52px; height: 52px;
+            border-radius: 13px;
+            font-size: 19px; line-height: 1;
+            color: #cfe4ff; cursor: pointer;
+            background: rgba(20, 32, 56, 0.82);
+            border: 1px solid rgba(120, 200, 255, 0.5);
+            backdrop-filter: blur(10px);
+            touch-action: none;
+            display: flex; align-items: center; justify-content: center;
+            box-shadow: 0 0 12px rgba(79, 255, 214, 0.2), 0 3px 12px rgba(0,0,0,0.45);
+            transition: transform 0.06s, background 0.1s, box-shadow 0.1s;
+            -webkit-touch-callout: none;
+            user-select: none;
+        }
+        #touchPad button.pressed, #touchPad button:active {
+            background: rgba(79, 255, 214, 0.30);
+            border-color: rgba(79, 255, 214, 0.9);
+            box-shadow: 0 0 20px rgba(79, 255, 214, 0.6), 0 3px 12px rgba(0,0,0,0.45);
+            transform: scale(0.94);
+        }
+        #btnDrop { background: rgba(255, 180, 60, 0.20); border-color: rgba(255, 200, 90, 0.45); }
+        #btnDrop.pressed, #btnDrop:active { background: rgba(255, 200, 90, 0.42); }
+        .dpad .spacer { pointer-events: none; visibility: hidden; }
+
+        #hintBar {
+            position: fixed;
+            bottom: calc(132px + env(safe-area-inset-bottom, 0px));
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 7px 16px;
+            background: rgba(8, 12, 24, 0.72);
+            border: 1px solid rgba(120, 200, 255, 0.18);
+            border-radius: 999px;
+            font-size: 11px; color: #8fa3bd;
+            white-space: nowrap; z-index: 10;
+            pointer-events: none;
+            display: none;
+        }
+        #hintBar kbd {
+            display: inline-block;
+            padding: 1px 6px; margin: 0 2px;
+            border-radius: 4px;
+            background: rgba(120, 200, 255, 0.14);
+            border: 1px solid rgba(120, 200, 255, 0.3);
+            color: #cfe4ff; font-family: monospace; font-size: 11px;
+        }
+
+        #overlay {
+            position: fixed; inset: 0;
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            gap: 8px;
+            background: rgba(3, 5, 12, 0.82);
+            backdrop-filter: blur(6px);
+            z-index: 50;
+            transition: opacity 0.25s ease, visibility 0.25s;
+        }
+        #overlay.hidden { opacity: 0; pointer-events: none; visibility: hidden; }
+        #overlayTitle {
+            font-size: 42px; font-weight: bold; letter-spacing: 6px;
+            background: linear-gradient(135deg, #4fffd6, #4f9dff, #c44fff);
+            -webkit-background-clip: text; background-clip: text;
+            -webkit-text-fill-color: transparent;
+            filter: drop-shadow(0 0 24px rgba(79, 255, 214, 0.35));
+        }
+        #overlaySub { font-size: 14px; color: #8fa3bd; letter-spacing: 1px; }
+        #overlayScore { font-size: 16px; color: #ffd24f; margin: 6px 0 10px; font-family: 'Consolas', monospace; }
+        #startBtn {
+            margin-top: 8px;
+            padding: 12px 44px;
+            font-size: 17px; font-weight: bold; letter-spacing: 2px;
+            color: #04121a; cursor: pointer;
+            background: linear-gradient(135deg, #4fffd6, #4f9dff);
+            border: none; border-radius: 12px;
+            box-shadow: 0 8px 28px rgba(79, 255, 214, 0.35);
+            transition: transform 0.15s, box-shadow 0.15s;
+        }
+        #startBtn:hover { transform: translateY(-2px); box-shadow: 0 12px 36px rgba(79, 255, 214, 0.5); }
+        #startBtn:active { transform: translateY(0); }
+
+        #toastLayer { position: fixed; inset: 0; pointer-events: none; z-index: 40; display: flex; align-items: center; justify-content: center; }
+        .toast {
+            position: absolute;
+            font-size: 34px; font-weight: bold; letter-spacing: 3px;
+            color: #4fffd6;
+            text-shadow: 0 0 30px rgba(79, 255, 214, 0.8);
+            animation: toastFly 0.9s ease-out forwards;
+            font-family: 'Consolas', monospace;
+        }
+        @keyframes toastFly {
+            0%   { opacity: 0; transform: translateY(20px) scale(0.7); }
+            25%  { opacity: 1; transform: translateY(0) scale(1.1); }
+            70%  { opacity: 1; transform: translateY(-18px) scale(1); }
+            100% { opacity: 0; transform: translateY(-48px) scale(0.95); }
+        }
+
+        @media (max-width: 420px) {
+            .dpad { grid-template-columns: repeat(3, 44px); grid-template-rows: repeat(2, 44px); gap: 5px; }
+            .actions { grid-template-columns: 44px; grid-template-rows: repeat(2, 44px); gap: 5px; }
+            #touchPad button { width: 44px; height: 44px; border-radius: 11px; font-size: 16px; }
+            #sidePanel { min-width: 0; padding: 10px 12px; gap: 8px; }
+            #sidePanel .row { gap: 8px; padding: 1px 0; }
+            #sidePanel .label { font-size: 10px; letter-spacing: 0; }
+            #sidePanel .value { font-size: 16px; }
+            #sidePanel .value.small { font-size: 12px; }
+            #nextCanvas { width: 38px; height: 38px; }
+            #hintBar { font-size: 10px; bottom: calc(120px + env(safe-area-inset-bottom, 0px)); }
+        }
+    </style>
+</head>
+<body>
+    <div id="canvasWrap"></div>
+
+    <div id="dragHandle" title="按住拖动可移动棋盘位置">⋮⋮ 拖动移动</div>
+
+    <div id="sidePanel">
+        <div class="panel-section">
+            <div class="row"><span class="label">SCORE</span><span id="scoreValue" class="value">0</span></div>
+            <div class="row"><span class="label">LEVEL</span><span id="levelValue" class="value small">1</span></div>
+            <div class="row"><span class="label">LINES</span><span id="linesValue" class="value small">0</span></div>
+            <div class="row"><span class="label">BEST</span><span id="bestValue" class="value small">0</span></div>
+        </div>
+        <div class="panel-divider"></div>
+        <div class="panel-section next-section">
+            <div class="label">NEXT</div>
+            <canvas id="nextCanvas" width="45" height="45"></canvas>
+        </div>
+        <div class="panel-divider"></div>
+        <button id="resetViewBtn" tabindex="-1">重置视角</button>
+    </div>
+
+    <div id="touchPad">
+        <div class="dpad">
+            <button class="spacer" tabindex="-1" aria-hidden="true"></button>
+            <button id="btnSoftDrop" tabindex="-1" aria-label="软降">▼</button>
+            <button class="spacer" tabindex="-1" aria-hidden="true"></button>
+            <button id="btnLeft" tabindex="-1" aria-label="左移">◀</button>
+            <button id="btnPauseTouch" tabindex="-1" aria-label="暂停">❚❚</button>
+            <button id="btnRight" tabindex="-1" aria-label="右移">▶</button>
+        </div>
+        <div class="actions">
+            <button id="btnRotate" tabindex="-1" aria-label="旋转">⟳</button>
+            <button id="btnDrop" tabindex="-1" aria-label="硬降">⤓</button>
+        </div>
+    </div>
+
+    <div id="hintBar">
+        <kbd>←</kbd><kbd>→</kbd> 移动 · <kbd>↑</kbd>/<kbd>W</kbd> 旋转 · <kbd>↓</kbd>/<kbd>S</kbd> 软降 ·
+        <kbd>Space</kbd> 硬降 · <kbd>P</kbd> 暂停 · <kbd>R</kbd> 重开 · 左键拖动旋转视角
+    </div>
+
+    <div id="toastLayer"></div>
+
+    <div id="overlay">
+        <div id="overlayTitle">3D 俄罗斯方块</div>
+        <div id="overlaySub">奇异形状 · 颗粒方块 · 立体音效</div>
+        <div id="overlayScore"></div>
+        <button id="startBtn">开始游戏</button>
+    </div>
+
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+        /* ================================================================
+         *  一、游戏常量与棋盘数据结构
+         * ================================================================ */
+
+        const COLS = 16;
+        const ROWS = 24;
+        const CELL = 1;
+
+        const SHAPES = {
+            I: { cells: [[0,0],[1,0],[2,0],[3,0]], hue: 190 },
+            O: { cells: [[0,0],[1,0],[0,1],[1,1]], hue: 45  },
+            T: { cells: [[0,0],[1,0],[2,0],[1,1]], hue: 280 },
+            S: { cells: [[1,0],[2,0],[0,1],[1,1]], hue: 130 },
+            Z: { cells: [[0,0],[1,0],[1,1],[2,1]], hue: 0   },
+            J: { cells: [[0,0],[0,1],[1,1],[2,1]], hue: 220 },
+            L: { cells: [[2,0],[0,1],[1,1],[2,1]], hue: 25  },
+            U: { cells: [[0,0],[2,0],[0,1],[1,1],[2,1]], hue: 300 },
+            P: { cells: [[0,0],[1,0],[0,1],[1,1],[0,2]], hue: 160 },
+            Y: { cells: [[1,0],[0,1],[1,1],[1,2]],       hue: 75  },
+            W: { cells: [[0,0],[0,1],[1,1],[1,2],[2,2]], hue: 250 },
+            CROSS: { cells: [[1,0],[0,1],[1,1],[2,1],[1,2]], hue: 340 },
+            T_SMALL: { cells: [[0,0],[1,0],[2,0]],       hue: 100 },
+            DOT: { cells: [[0,0]],                       hue: 60  },
+            LINE5: { cells: [[0,0],[1,0],[2,0],[3,0],[4,0]], hue: 200 },
+            DIAG: { cells: [[0,0],[1,1],[2,2]],          hue: 20  },
+        };
+
+        const SHAPE_POOL = [
+            'I','I','I','O','O','T','T','S','S','Z','Z','J','J','L','L',
+            'U','P','Y','W','CROSS','T_SMALL','DIAG','LINE5','DOT'
+        ];
+
+        let board = [];
+        function createBoard() {
+            return Array.from({ length: ROWS }, () => new Array(COLS).fill(null));
+        }
+
+        /* ================================================================
+         *  二、Three.js 场景搭建
+         * ================================================================ */
+
+        const wrap = document.getElementById('canvasWrap');
+
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x08080f);
+        scene.fog = new THREE.Fog(0x08080f, 40, 80);
+
+        // 背景球：顶紫、中近黑、底黑
+        const bgGeo = new THREE.SphereGeometry(80, 32, 16);
+        const bgPos = bgGeo.attributes.position;
+        const bgColors = new Float32Array(bgPos.count * 3);
+        const bgTop = new THREE.Color(0x1a0a2e);   // 深紫
+        const bgMid = new THREE.Color(0x08080f);   // 近黑
+        const bgBot = new THREE.Color(0x030305);   // 黑
+        const bgTmp = new THREE.Color();
+        for (let i = 0; i < bgPos.count; i++) {
+            const t = (bgPos.getY(i) / 80 + 1) * 0.5;
+            if (t > 0.5) bgTmp.copy(bgMid).lerp(bgTop, (t - 0.5) * 2);
+            else bgTmp.copy(bgBot).lerp(bgMid, t * 2);
+            bgColors[i * 3] = bgTmp.r;
+            bgColors[i * 3 + 1] = bgTmp.g;
+            bgColors[i * 3 + 2] = bgTmp.b;
+        }
+        bgGeo.setAttribute('color', new THREE.BufferAttribute(bgColors, 3));
+        scene.add(new THREE.Mesh(bgGeo, new THREE.MeshBasicMaterial({
+            vertexColors: true, side: THREE.BackSide, fog: false
+        })));
+
+        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 300);
+        camera.up.set(0, 1, 0);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        const isMobileNow = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)
+            || (navigator.maxTouchPoints > 0 && window.innerWidth < 900);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, isMobileNow ? 1.5 : 2));
+        renderer.shadowMap.enabled = !isMobileNow;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        renderer.outputColorSpace = THREE.SRGBColorSpace;
+        // 修复：关掉 ACES tone mapping。ACES 会压高光、去饱和，导致方块颜色发白发灰。
+        // NoToneMapping 下 emissive = instanceColor 时输出就是纯 sRGB 色，和 NEXT 预览一致。
+        renderer.toneMapping = THREE.NoToneMapping;
+        wrap.appendChild(renderer.domElement);
+        renderer.domElement.style.touchAction = 'none';
+        renderer.domElement.style.userSelect = 'none';
+        renderer.domElement.style.outline = 'none';
+        renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault());
+        renderer.domElement.addEventListener('dragstart', (e) => e.preventDefault());
+        renderer.domElement.addEventListener('selectstart', (e) => e.preventDefault());
+
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.08;
+        controls.enableRotate = true;
+        controls.enablePan = false;
+        controls.enableZoom = true;
+        controls.minDistance = 15;
+        controls.maxDistance = 250;
+        controls.minPolarAngle = 0;
+        controls.maxPolarAngle = Math.PI;
+        controls.minAzimuthAngle = -Infinity;
+        controls.maxAzimuthAngle = Infinity;
+        controls.rotateSpeed = 1.0;
+        controls.target.set(0, 0, 0);
+
+        const BOARD_W = COLS * CELL;
+        const BOARD_H = ROWS * CELL;
+
+        /* ================================================================
+         *  相机布局：view offset + 拖动偏移
+         * ================================================================ */
+
+        const VIEW_ZOOM = 1.5;
+
+        const dragHandle = document.getElementById('dragHandle');
+
+        let dragViewOffsetX = 0;
+        let dragViewOffsetY = 0;
+
+        let currentCenterXRatio = 0.5;
+        let currentCenterYRatio = 0.5;
+
+        function applyViewOffset() {
+            const w = window.innerWidth;
+            const h = window.innerHeight;
+            const fullW = VIEW_ZOOM * w;
+            const fullH = VIEW_ZOOM * h;
+            let x = fullW / 2 - currentCenterXRatio * w - dragViewOffsetX;
+            let y = fullH / 2 - currentCenterYRatio * h - dragViewOffsetY;
+            x = Math.max(0, Math.min(fullW - w, x));
+            y = Math.max(0, Math.min(fullH - h, y));
+            camera.setViewOffset(fullW, fullH, x, y, w, h);
+        }
+
+        function updateDragHandle(boardLeftPx, boardTopPx, boardWPx) {
+            const handleW = Math.min(Math.max(boardWPx - 20, 90), 140);
+            dragHandle.style.display = 'block';
+            dragHandle.style.left = (boardLeftPx + (boardWPx - handleW) / 2) + 'px';
+            dragHandle.style.top = Math.max(4, boardTopPx - 28) + 'px';
+            dragHandle.style.width = handleW + 'px';
+        }
+
+        let isDraggingBoard = false;
+        let dragPointerId = null;
+        let dragStartClientX = 0, dragStartClientY = 0;
+        let dragStartViewOffsetX = 0, dragStartViewOffsetY = 0;
+        let dragStartHandleLeft = 0, dragStartHandleTop = 0;
+
+        dragHandle.addEventListener('pointerdown', (e) => {
+            if (e.button !== undefined && e.button !== 0) return;
+            e.preventDefault();
+            e.stopPropagation();
+            isDraggingBoard = true;
+            dragPointerId = e.pointerId;
+            dragStartClientX = e.clientX;
+            dragStartClientY = e.clientY;
+            dragStartViewOffsetX = dragViewOffsetX;
+            dragStartViewOffsetY = dragViewOffsetY;
+            const rect = dragHandle.getBoundingClientRect();
+            dragStartHandleLeft = rect.left;
+            dragStartHandleTop = rect.top;
+            try { dragHandle.setPointerCapture(e.pointerId); } catch (_) {}
+        });
+
+        window.addEventListener('pointermove', (e) => {
+            if (!isDraggingBoard || e.pointerId !== dragPointerId) return;
+            const screenDx = e.clientX - dragStartClientX;
+            const screenDy = e.clientY - dragStartClientY;
+            dragViewOffsetX = dragStartViewOffsetX + screenDx;
+            dragViewOffsetY = dragStartViewOffsetY + screenDy;
+            applyViewOffset();
+            dragHandle.style.left = (dragStartHandleLeft + screenDx) + 'px';
+            dragHandle.style.top = Math.max(4, dragStartHandleTop + screenDy) + 'px';
+        });
+
+        function endBoardDrag(e) {
+            if (!isDraggingBoard) return;
+            if (e && e.pointerId !== undefined && e.pointerId !== dragPointerId) return;
+            isDraggingBoard = false;
+            try { if (dragPointerId !== null) dragHandle.releasePointerCapture(dragPointerId); } catch (_) {}
+            dragPointerId = null;
+        }
+        window.addEventListener('pointerup', endBoardDrag);
+        window.addEventListener('pointercancel', endBoardDrag);
+
+        /* ---------------- 灯光（整体调低，让方块自发光颜色主导） ---------------- */
+
+        scene.add(new THREE.AmbientLight(0xffffff, 0.25));
+
+        const keyLight = new THREE.DirectionalLight(0xffffff, 0.7);
+        keyLight.position.set(12, 26, 14);
+        keyLight.castShadow = true;
+        keyLight.shadow.mapSize.set(2048, 2048);
+        keyLight.shadow.camera.left = -16;
+        keyLight.shadow.camera.right = 16;
+        keyLight.shadow.camera.top = 22;
+        keyLight.shadow.camera.bottom = -16;
+        keyLight.shadow.camera.near = 1;
+        keyLight.shadow.camera.far = 70;
+        keyLight.shadow.bias = -0.0008;
+        scene.add(keyLight);
+
+        const fillLight = new THREE.DirectionalLight(0x8899ff, 0.25);
+        fillLight.position.set(-14, 8, -6);
+        scene.add(fillLight);
+
+        const rimLight = new THREE.DirectionalLight(0xff66cc, 0.35);
+        rimLight.position.set(0, 6, -18);
+        scene.add(rimLight);
+
+        const colorPoints = [
+            { color: 0x00ffaa, pos: [10, 8, 8],  dist: 30 },
+            { color: 0xff44ff, pos: [-10, 6, 8], dist: 30 },
+            { color: 0x44aaff, pos: [0, 12, -10], dist: 30 },
+            { color: 0xffaa44, pos: [0, -4, 12], dist: 25 },
+        ];
+        colorPoints.forEach(({ color, pos, dist }) => {
+            const pl = new THREE.PointLight(color, 0.3, dist);
+            pl.position.set(pos[0], pos[1], pos[2]);
+            scene.add(pl);
+        });
+
+        /* ---------------- 棋盘（暗色玻璃背景，不再深蓝） ---------------- */
+
+        const boardGroup = new THREE.Group();
+        boardGroup.position.set(-BOARD_W / 2, -BOARD_H / 2, 0);
+        scene.add(boardGroup);
+
+        const backPlane = new THREE.Mesh(
+            new THREE.PlaneGeometry(BOARD_W, BOARD_H),
+            new THREE.MeshStandardMaterial({
+                color: 0x0a0a10,
+                roughness: 0.25,
+                metalness: 0.4,
+                emissive: 0x0a0a14,
+                emissiveIntensity: 0.2,
+                transparent: true,
+                opacity: 0.94,
+            })
+        );
+        backPlane.position.set(BOARD_W / 2, BOARD_H / 2, -0.55);
+        backPlane.receiveShadow = true;
+        boardGroup.add(backPlane);
+
+        // 网格线：淡白青，低不透明度，不抢方块颜色
+        const gridMat = new THREE.LineBasicMaterial({ color: 0x88aacc, transparent: true, opacity: 0.28 });
+        const gridPts = [];
+        for (let c = 0; c <= COLS; c++) {
+            gridPts.push(new THREE.Vector3(c * CELL, 0, 0), new THREE.Vector3(c * CELL, BOARD_H, 0));
+        }
+        for (let r = 0; r <= ROWS; r++) {
+            gridPts.push(new THREE.Vector3(0, r * CELL, 0), new THREE.Vector3(BOARD_W, r * CELL, 0));
+        }
+        boardGroup.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(gridPts), gridMat));
+
+        const frameGeo = new THREE.BufferGeometry().setFromPoints([
+            new THREE.Vector3(0, 0, 0), new THREE.Vector3(BOARD_W, 0, 0),
+            new THREE.Vector3(BOARD_W, BOARD_H, 0), new THREE.Vector3(0, BOARD_H, 0),
+            new THREE.Vector3(0, 0, 0)
+        ]);
+        boardGroup.add(new THREE.Line(frameGeo, new THREE.LineBasicMaterial({ color: 0x4fffd6, transparent: true, opacity: 0.9 })));
+
+        /* ---------------- 环境贴图 ---------------- */
+
+        function buildEnvMap(renderer) {
+            const envScene = new THREE.Scene();
+
+            const skyGeo = new THREE.SphereGeometry(50, 32, 16);
+            const posAttr = skyGeo.attributes.position;
+            const colors = new Float32Array(posAttr.count * 3);
+            const top = new THREE.Color(0xffffff);
+            const mid = new THREE.Color(0x8fb8e8);
+            const bottom = new THREE.Color(0x101828);
+            const tmp = new THREE.Color();
+            for (let i = 0; i < posAttr.count; i++) {
+                const t = (posAttr.getY(i) / 50 + 1) * 0.5;
+                if (t > 0.5) tmp.copy(mid).lerp(top, (t - 0.5) * 2);
+                else tmp.copy(bottom).lerp(mid, t * 2);
+                colors[i * 3] = tmp.r;
+                colors[i * 3 + 1] = tmp.g;
+                colors[i * 3 + 2] = tmp.b;
+            }
+            skyGeo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+            envScene.add(new THREE.Mesh(skyGeo, new THREE.MeshBasicMaterial({
+                vertexColors: true, side: THREE.BackSide
+            })));
+
+            const boxMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+            const boxGeo = new THREE.PlaneGeometry(14, 14);
+            const addLightBox = (x, y, z) => {
+                const m = new THREE.Mesh(boxGeo, boxMat);
+                m.position.set(x, y, z);
+                m.lookAt(0, 0, 0);
+                envScene.add(m);
+            };
+            addLightBox(0, 30, 0);
+            addLightBox(-24, 10, 20);
+            addLightBox(26, 8, -18);
+
+            const pmrem = new THREE.PMREMGenerator(renderer);
+            const envRT = pmrem.fromScene(envScene, 0.02);
+            const envTex = envRT.texture;
+            pmrem.dispose();
+            skyGeo.dispose(); boxGeo.dispose();
+            return envTex;
+        }
+
+        const envMap = buildEnvMap(renderer);
+
+        /* ================================================================
+         *  三、颗粒颜色与材质（活动 / 已固定共用，保证和 NEXT 一致）
+         * ================================================================ */
+
+        const IS_MOBILE = isMobileNow;
+        const BEAD_SUB = IS_MOBILE ? 1 : 2;
+        const BEAD = BEAD_SUB === 1 ? 0.92 : 0.42;
+        const beadGeo = new THREE.BoxGeometry(BEAD, BEAD, BEAD);
+        // 修复全黑 bug：材质开了 vertexColors:true，但 BoxGeometry 没有 color 属性。
+        // GLSL 里缺失的 color 属性默认为 vec3(0,0,0)，会把 vColor 乘成 0，
+        // 之后 instanceColor 再乘进来也还是 0 → 方块全黑。
+        // 补一个全白的 color 属性：vColor = 1 * instanceColor = instanceColor，
+        // 这样每个颗粒既能进 diffuseColor，又被 onBeforeCompile 注入到 emissive，
+        // 配合 clearcoat + envMap 就有宝石般的彩色光泽。
+        {
+            const vCount = beadGeo.attributes.position.count;
+            const white = new Float32Array(vCount * 3).fill(1);
+            beadGeo.setAttribute('color', new THREE.BufferAttribute(white, 3));
+        }
+
+        const BEAD_OFFSETS = [];
+        {
+            const gap = CELL / BEAD_SUB;
+            const base = -(CELL - gap) / 2;
+            for (let k = 0; k < BEAD_SUB; k++) {
+                for (let j = 0; j < BEAD_SUB; j++) {
+                    for (let i = 0; i < BEAD_SUB; i++) {
+                        BEAD_OFFSETS.push({
+                            x: BEAD_SUB === 1 ? 0 : base + i * gap,
+                            y: BEAD_SUB === 1 ? 0 : base + j * gap,
+                            z: BEAD_SUB === 1 ? 0 : base + k * gap,
+                            ix: i, iy: j, iz: k
+                        });
+                    }
+                }
+            }
+        }
+
+        const _hslColor = { h: 0, s: 0, l: 0 };
+        /**
+         * 颗粒颜色：高饱和 + 中高亮度，和 NEXT 预览共用。
+         * s 0.95~1.0、l 0.56~0.62 → 非常鲜艳的彩色。
+         */
+        function beadColor(hue, ix, iy, iz) {
+            const jitter = ((ix * 7 + iy * 13 + iz * 23) % 10) / 10;
+            _hslColor.h = (hue + jitter * 20 - 10 + 360) % 360;
+            _hslColor.s = 0.95 + jitter * 0.05;
+            _hslColor.l = 0.56 + (1 - jitter) * 0.06;
+            return new THREE.Color().setHSL(_hslColor.h / 360, _hslColor.s, _hslColor.l);
+        }
+
+        /**
+         * 方块共用材质（活动 + 已固定都用它）。
+         * 关键：
+         *   - vertexColors: true → instanceColor 乘进 diffuseColor
+         *   - onBeforeCompile 让 emissive 也乘 vColor → 每个颗粒发自己的亮色
+         *   - 无 transmission，颜色不会被洗白
+         *   - NoToneMapping 下 emissive 直接输出 sRGB 原色
+         */
+        const beadMaterial = new THREE.MeshPhysicalMaterial({
+            color: 0xffffff,
+            metalness: 0.0,
+            roughness: 0.32,
+            clearcoat: 1.0,
+            clearcoatRoughness: 0.1,
+            emissive: 0xffffff,
+            emissiveIntensity: 0.35,
+            envMap: envMap,
+            envMapIntensity: 0.55,
+            vertexColors: true,
+        });
+
+        beadMaterial.onBeforeCompile = (shader) => {
+            shader.fragmentShader = shader.fragmentShader.replace(
+                '#include <emissivemap_fragment>',
+                `#include <emissivemap_fragment>
+                totalEmissiveRadiance *= vColor.rgb;`
+            );
+        };
+
+        function createBeadMesh(hue, cells, pivotCol, pivotRow, dynamic = true) {
+            const beadsPerCell = BEAD_OFFSETS.length;
+            const count = cells.length * beadsPerCell;
+
+            const mesh = new THREE.InstancedMesh(beadGeo, beadMaterial, count);
+            mesh.castShadow = true;
+            mesh.receiveShadow = true;
+            mesh.instanceMatrix.setUsage(dynamic ? THREE.DynamicDrawUsage : THREE.StaticDrawUsage);
+
+            const cx = pivotCol / 2;
+            const cy = pivotRow / 2;
+
+            const m = new THREE.Matrix4();
+            const color = new THREE.Color();
+            let idx = 0;
+            for (const [c, r] of cells) {
+                const cellX = (c + 0.5) - cx;
+                const cellY = cy - (r + 0.5);
+                for (const off of BEAD_OFFSETS) {
+                    m.makeTranslation(cellX + off.x, cellY + off.y, off.z);
+                    mesh.setMatrixAt(idx, m);
+                    color.copy(beadColor(hue, off.ix, off.iy, off.iz));
+                    mesh.setColorAt(idx, color);
+                    idx++;
+                }
+            }
+            mesh.instanceMatrix.needsUpdate = true;
+            if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+            return mesh;
+        }
+
+        /* ================================================================
+         *  四、音效合成
+         * ================================================================ */
+
+        let audioCtx = null;
+        let audioUnlocked = false;
+
+        function initAudio() {
+            if (audioUnlocked && audioCtx && audioCtx.state === 'running') return;
+
+            try {
+                if (navigator.audioSession) navigator.audioSession.type = 'playback';
+            } catch (_) {}
+
+            if (!audioCtx) {
+                const AC = window.AudioContext || window.webkitAudioContext;
+                if (!AC) { console.warn('浏览器不支持 Web Audio API'); return; }
+                try { audioCtx = new AC(); }
+                catch (e) { console.warn('AudioContext 创建失败', e); return; }
+            }
+
+            const markUnlocked = () => {
+                if (audioUnlocked) return;
+                try {
+                    const buf = audioCtx.createBuffer(1, 1, audioCtx.sampleRate);
+                    const src = audioCtx.createBufferSource();
+                    src.buffer = buf;
+                    src.connect(audioCtx.destination);
+                    src.start(0);
+                } catch (_) {}
+                audioUnlocked = true;
+            };
+
+            const doResume = () => {
+                const p = audioCtx.resume();
+                if (p && typeof p.then === 'function') p.then(markUnlocked).catch(() => {});
+                else markUnlocked();
+            };
+
+            if (audioCtx.state === 'suspended') doResume();
+            else markUnlocked();
+        }
+
+        function playTone(freq, dur = 0.08, type = 'square', gain = 0.07, freqEnd = null) {
+            if (!audioCtx || audioCtx.state !== 'running') return;
+            const t0 = audioCtx.currentTime;
+            const osc = audioCtx.createOscillator();
+            const env = audioCtx.createGain();
+            osc.type = type;
+            osc.frequency.setValueAtTime(freq, t0);
+            if (freqEnd !== null) {
+                osc.frequency.exponentialRampToValueAtTime(Math.max(1, freqEnd), t0 + dur);
+            }
+            env.gain.setValueAtTime(0.0001, t0);
+            env.gain.exponentialRampToValueAtTime(gain, t0 + 0.006);
+            env.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+            osc.connect(env).connect(audioCtx.destination);
+            osc.start(t0);
+            osc.stop(t0 + dur + 0.02);
+        }
+
+        const SFX = {
+            move:   () => playTone(520, 0.045, 'square', 0.035),
+            rotate: () => playTone(720, 0.06, 'square', 0.04),
+            lock:   () => playTone(160, 0.13, 'triangle', 0.11, 70),
+            softDrop: () => playTone(300, 0.03, 'square', 0.02),
+            clear(rows) {
+                const base = 520;
+                const steps = [0, 4, 7, 12, 16, 19];
+                const n = Math.min(rows + 2, steps.length);
+                for (let i = 0; i < n; i++) {
+                    setTimeout(() => playTone(base * Math.pow(2, steps[i] / 12), 0.11, 'triangle', 0.075), i * 55);
+                }
+            },
+            levelUp() {
+                [523.25, 659.25, 783.99].forEach((f, i) =>
+                    setTimeout(() => playTone(f, 0.22, 'sine', 0.08), i * 80));
+            },
+            gameOver() {
+                playTone(440, 0.7, 'sawtooth', 0.08, 60);
+            }
+        };
+
+        /* ================================================================
+         *  五、游戏状态
+         * ================================================================ */
+
+        const state = {
+            score: 0,
+            level: 1,
+            lines: 0,
+            best: Number(localStorage.getItem('tetris3d_best') || 0),
+            running: false,
+            paused: false,
+            over: false,
+            dropTimer: 0,
+            dropInterval: 0.9,
+        };
+
+        let piece = null;
+
+        function cellToWorld(col, row, z = 0) {
+            return new THREE.Vector3(col, ROWS - row, z);
+        }
+        function cellCenterToWorld(c, r, z = 0) {
+            return cellToWorld(c + 0.5, r + 0.5, z);
+        }
+
+        function rotateCells(cells) {
+            let maxC = 0;
+            for (const [c] of cells) maxC = Math.max(maxC, c);
+            const W = maxC + 1;
+            const rotated = cells.map(([c, r]) => [r, W - 1 - c]);
+            let minC = Infinity, minR = Infinity;
+            for (const [c, r] of rotated) { minC = Math.min(minC, c); minR = Math.min(minR, r); }
+            return rotated.map(([c, r]) => [c - minC, r - minR]);
+        }
+
+        function cellsBounds(cells) {
+            let maxC = 0, maxR = 0;
+            for (const [c, r] of cells) { maxC = Math.max(maxC, c); maxR = Math.max(maxR, r); }
+            return { w: maxC + 1, h: maxR + 1 };
+        }
+
+        function makePiece(forceKey = null) {
+            const key = forceKey || SHAPE_POOL[Math.floor(Math.random() * SHAPE_POOL.length)];
+            const def = SHAPES[key];
+            const cells = def.cells.map(([c, r]) => [c, r]);
+            const { w, h } = cellsBounds(cells);
+            return {
+                key,
+                hue: def.hue,
+                cells,
+                cellsW: w,
+                cellsH: h,
+                col: Math.floor((COLS - w) / 2),
+                row: 0,
+                rot: 0,
+                mesh: null,
+            };
+        }
+
+        let nextKey = null;
+        function pickNextKey() {
+            return SHAPE_POOL[Math.floor(Math.random() * SHAPE_POOL.length)];
+        }
+
+        function isValid(p, dc = 0, dr = 0, cells = null) {
+            const cs = cells || p.cells;
+            for (const [c, r] of cs) {
+                const nc = p.col + c + dc;
+                const nr = p.row + r + dr;
+                if (nc < 0 || nc >= COLS) return false;
+                if (nr < 0 || nr >= ROWS) return false;
+                if (board[nr][nc]) return false;
+            }
+            return true;
+        }
+
+        // 共享几何体 + 共享材质：只 dispose mesh 自身（instanceMatrix / instanceColor）
+        function disposeBeadMesh(mesh) {
+            if (!mesh) return;
+            boardGroup.remove(mesh);
+            if (typeof mesh.dispose === 'function') mesh.dispose();
+        }
+
+        function buildPieceMesh(p) {
+            if (p.mesh) disposeBeadMesh(p.mesh);
+            const { w, h } = cellsBounds(p.cells);
+            p.cellsW = w; p.cellsH = h;
+            const mesh = createBeadMesh(p.hue, p.cells, w, h, true);
+            boardGroup.add(mesh);
+            p.mesh = mesh;
+            positionPieceMesh(p);
+        }
+
+        function positionPieceMesh(p) {
+            if (!p.mesh) return;
+            const { w, h } = cellsBounds(p.cells);
+            const center = cellToWorld(p.col + w / 2, p.row + h / 2, 0.12);
+            p.mesh.position.copy(center);
+        }
+
+        /* ================================================================
+         *  六、已固定方块的渲染（单个 InstancedMesh，共用 beadMaterial）
+         * ================================================================ */
+
+        let settledMesh = null;
+        let settledCapacity = 0;
+
+        function rebuildSettledMesh() {
+            let cellCount = 0;
+            for (let r = 0; r < ROWS; r++)
+                for (let c = 0; c < COLS; c++)
+                    if (board[r][c]) cellCount++;
+
+            const total = cellCount * BEAD_OFFSETS.length;
+            if (total === 0) {
+                if (settledMesh) {
+                    boardGroup.remove(settledMesh);
+                    if (typeof settledMesh.dispose === 'function') settledMesh.dispose();
+                    settledMesh = null;
+                    settledCapacity = 0;
+                }
+                return;
+            }
+
+            if (!settledMesh || settledCapacity < total) {
+                if (settledMesh) {
+                    boardGroup.remove(settledMesh);
+                    if (typeof settledMesh.dispose === 'function') settledMesh.dispose();
+                }
+                settledCapacity = Math.max(total, ROWS * COLS * BEAD_OFFSETS.length);
+                settledMesh = new THREE.InstancedMesh(beadGeo, beadMaterial, settledCapacity);
+                settledMesh.castShadow = true;
+                settledMesh.receiveShadow = true;
+                settledMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+                boardGroup.add(settledMesh);
+            }
+
+            settledMesh.count = total;
+
+            const m = new THREE.Matrix4();
+            const color = new THREE.Color();
+            let idx = 0;
+            for (let r = 0; r < ROWS; r++) {
+                for (let c = 0; c < COLS; c++) {
+                    const cell = board[r][c];
+                    if (!cell) continue;
+                    const wx = c + 0.5;
+                    const wy = ROWS - r - 0.5;
+                    for (const off of BEAD_OFFSETS) {
+                        m.makeTranslation(wx + off.x, wy + off.y, off.z);
+                        settledMesh.setMatrixAt(idx, m);
+                        color.copy(beadColor(cell.hue, off.ix, off.iy, off.iz));
+                        settledMesh.setColorAt(idx, color);
+                        idx++;
+                    }
+                }
+            }
+            settledMesh.instanceMatrix.needsUpdate = true;
+            if (settledMesh.instanceColor) settledMesh.instanceColor.needsUpdate = true;
+        }
+
+        function settlePiece(p) {
+            for (const [c, r] of p.cells) {
+                const nc = p.col + c;
+                const nr = p.row + r;
+                if (nr < 0 || nr >= ROWS || nc < 0 || nc >= COLS) continue;
+                board[nr][nc] = { hue: p.hue };
+            }
+            rebuildSettledMesh();
+
+            if (p.mesh) {
+                disposeBeadMesh(p.mesh);
+                p.mesh = null;
+            }
+        }
+
+        function clearLines() {
+            const fullRows = [];
+            for (let r = 0; r < ROWS; r++) {
+                if (board[r].every(v => v !== null)) fullRows.push(r);
+            }
+            if (fullRows.length === 0) return 0;
+
+            const kept = [];
+            for (let r = ROWS - 1; r >= 0; r--) {
+                if (!fullRows.includes(r)) kept.push(board[r]);
+            }
+            kept.reverse();
+            while (kept.length < ROWS) kept.unshift(new Array(COLS).fill(null));
+            for (let r = 0; r < ROWS; r++) board[r] = kept[r];
+
+            rebuildSettledMesh();
+            return fullRows.length;
+        }
+
+        /* ================================================================
+         *  七、游戏流程
+         * ================================================================ */
+
+        const elScore = document.getElementById('scoreValue');
+        const elLevel = document.getElementById('levelValue');
+        const elLines = document.getElementById('linesValue');
+        const elBest = document.getElementById('bestValue');
+        const overlay = document.getElementById('overlay');
+        const overlayTitle = document.getElementById('overlayTitle');
+        const overlaySub = document.getElementById('overlaySub');
+        const overlayScore = document.getElementById('overlayScore');
+        const startBtn = document.getElementById('startBtn');
+
+        function updateHud() {
+            elScore.textContent = state.score;
+            elLevel.textContent = state.level;
+            elLines.textContent = state.lines;
+            elBest.textContent = state.best;
+        }
+
+        function computeDropInterval() {
+            return Math.max(0.08, 0.9 - (state.level - 1) * 0.07);
+        }
+
+        function spawnPiece() {
+            const key = nextKey || pickNextKey();
+            const p = makePiece(key);
+            if (!isValid(p, 0, 0)) {
+                gameOver();
+                return;
+            }
+            piece = p;
+            buildPieceMesh(piece);
+            nextKey = pickNextKey();
+            drawNextPreview();
+        }
+
+        function movePiece(dc, dr, sfxName = 'move') {
+            if (!piece) return false;
+            if (isValid(piece, dc, dr)) {
+                piece.col += dc;
+                piece.row += dr;
+                positionPieceMesh(piece);
+                if (sfxName) SFX[sfxName]?.();
+                return true;
+            }
+            return false;
+        }
+
+        function rotatePiece() {
+            if (!piece) return;
+            const rotated = rotateCells(piece.cells);
+            const kicks = [[0, 0], [-1, 0], [1, 0], [-2, 0], [2, 0]];
+            for (const [dc, dr] of kicks) {
+                if (isValid(piece, dc, dr, rotated)) {
+                    piece.cells = rotated;
+                    piece.col += dc;
+                    piece.row += dr;
+                    piece.rot = (piece.rot + 1) % 4;
+                    buildPieceMesh(piece);
+                    SFX.rotate();
+                    return;
+                }
+            }
+        }
+
+        function hardDrop() {
+            if (!piece) return;
+            let dropped = 0;
+            while (isValid(piece, 0, 1)) {
+                piece.row += 1;
+                dropped++;
+            }
+            positionPieceMesh(piece);
+            state.score += dropped * 2;
+            if (state.score > state.best) {
+                state.best = state.score;
+                localStorage.setItem('tetris3d_best', String(state.best));
+            }
+            updateHud();
+            lockPiece();
+        }
+
+        function lockPiece() {
+            if (!piece) return;
+            settlePiece(piece);
+            SFX.lock();
+
+            const cleared = clearLines();
+            if (cleared > 0) {
+                const table = { 1: 100, 2: 300, 3: 500, 4: 800 };
+                const gained = (table[cleared] || cleared * 200) * state.level;
+                state.score += gained;
+                state.lines += cleared;
+                showToast(`+${gained}`);
+
+                const newLevel = Math.floor(state.lines / 10) + 1;
+                if (newLevel > state.level) {
+                    state.level = newLevel;
+                    state.dropInterval = computeDropInterval();
+                    SFX.levelUp();
+                    showToast(`LEVEL ${state.level}`);
+                }
+                SFX.clear(cleared);
+                updateHud();
+                if (state.score > state.best) {
+                    state.best = state.score;
+                    localStorage.setItem('tetris3d_best', String(state.best));
+                    updateHud();
+                }
+            }
+
+            piece = null;
+            spawnPiece();
+        }
+
+        function gameOver() {
+            state.running = false;
+            state.over = true;
+            SFX.gameOver();
+            if (state.score > state.best) {
+                state.best = state.score;
+                localStorage.setItem('tetris3d_best', String(state.best));
+                updateHud();
+            }
+            overlayTitle.textContent = '游戏结束';
+            overlaySub.textContent = '再来一局？';
+            overlayScore.textContent = `得分 ${state.score} · 消行 ${state.lines} · 最高 ${state.best}`;
+            startBtn.textContent = '重新开始';
+            overlay.classList.remove('hidden');
+        }
+
+        function startGame() {
+            initAudio();
+            if (piece && piece.mesh) {
+                disposeBeadMesh(piece.mesh);
+            }
+            if (settledMesh) {
+                boardGroup.remove(settledMesh);
+                if (typeof settledMesh.dispose === 'function') settledMesh.dispose();
+                settledMesh = null;
+                settledCapacity = 0;
+            }
+            piece = null;
+
+            board = createBoard();
+            state.score = 0;
+            state.level = 1;
+            state.lines = 0;
+            state.running = true;
+            state.paused = false;
+            state.over = false;
+            state.dropTimer = 0;
+            state.dropInterval = computeDropInterval();
+
+            nextKey = pickNextKey();
+            spawnPiece();
+            updateHud();
+            overlay.classList.add('hidden');
+        }
+
+        function togglePause() {
+            if (!state.running) return;
+            state.paused = !state.paused;
+            if (state.paused) {
+                overlayTitle.textContent = '已暂停';
+                overlaySub.textContent = '按 P 或点击按钮继续';
+                overlayScore.textContent = '';
+                startBtn.textContent = '继续';
+                overlay.classList.remove('hidden');
+            } else {
+                overlay.classList.add('hidden');
+            }
+        }
+
+        const toastLayer = document.getElementById('toastLayer');
+        function showToast(text) {
+            const div = document.createElement('div');
+            div.className = 'toast';
+            div.textContent = text;
+            div.style.marginLeft = `${(Math.random() * 240 - 120).toFixed(0)}px`;
+            toastLayer.appendChild(div);
+            setTimeout(() => div.remove(), 950);
+        }
+
+        /* ---------------- 下一块预览（和 3D 共用 beadColor，颜色一致） ---------------- */
+
+        const nextCanvas = document.getElementById('nextCanvas');
+        const nextCtx = nextCanvas.getContext('2d');
+
+        function drawNextPreview() {
+            const w = nextCanvas.width, h = nextCanvas.height;
+            nextCtx.clearRect(0, 0, w, h);
+            if (!nextKey) return;
+            const def = SHAPES[nextKey];
+            const { w: bw, h: bh } = cellsBounds(def.cells);
+            const pad = 8;
+            const cellSize = Math.min((w - pad * 2) / bw, (h - pad * 2) / bh);
+            const ox = (w - cellSize * bw) / 2;
+            const oy = (h - cellSize * bh) / 2;
+
+            const inner = Math.max(0, cellSize - 4);
+            const r = Math.max(1, Math.min(4, inner / 2));
+
+            for (const [c, rIdx] of def.cells) {
+                const color = beadColor(def.hue, c, rIdx, 0);
+                nextCtx.fillStyle = `#${color.getHexString()}`;
+                roundRect(nextCtx, ox + c * cellSize + 2, oy + rIdx * cellSize + 2,
+                          inner, inner, r);
+                nextCtx.fill();
+            }
+        }
+
+        function roundRect(ctx, x, y, w, h, r) {
+            ctx.beginPath();
+            ctx.moveTo(x + r, y);
+            ctx.arcTo(x + w, y, x + w, y + h, r);
+            ctx.arcTo(x + w, y + h, x, y + h, r);
+            ctx.arcTo(x, y + h, x, y, r);
+            ctx.arcTo(x, y, x + w, y, r);
+            ctx.closePath();
+        }
+
+        /* ================================================================
+         *  八、相机布局
+         * ================================================================ */
+
+        function computeLayout(isReset) {
+            const w = window.innerWidth;
+            const h = window.innerHeight;
+            const aspect = w / h;
+            const isPortrait = aspect < 1;
+            const isNarrow = w < 420;
+
+            const sidebarW = 128;
+            const leftMargin = 12;
+            const topMargin = 48;
+
+            const isTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+            const touchH = isNarrow ? 145 : (isTouch ? 140 : 133);
+
+            currentCenterXRatio = isPortrait ? 0.32 : 0.5;
+
+            if (isReset) {
+                dragViewOffsetX = 0;
+                dragViewOffsetY = 0;
+            }
+
+            const vFov = THREE.MathUtils.degToRad(camera.fov);
+            const halfTanV_full = Math.tan(vFov / 2);
+            const halfTanH_full = halfTanV_full * aspect;
+            const halfTanV = halfTanV_full / VIEW_ZOOM;
+            const halfTanH = halfTanH_full / VIEW_ZOOM;
+
+            let maxBoardWpx;
+            if (isPortrait) {
+                maxBoardWpx = Math.min(
+                    2 * (currentCenterXRatio * w - leftMargin),
+                    2 * (w - sidebarW - currentCenterXRatio * w)
+                );
+            } else {
+                maxBoardWpx = Math.min(
+                    2 * (w / 2 - leftMargin),
+                    2 * (w / 2 - sidebarW)
+                );
+            }
+            maxBoardWpx = Math.max(120, maxBoardWpx);
+            const minVisibleW = BOARD_W * w / maxBoardWpx;
+            const minDistH = minVisibleW / (2 * halfTanH);
+
+            const maxBoardHpx = Math.max(120, h - touchH - topMargin);
+            const minVisibleH = BOARD_H * h / maxBoardHpx;
+            const minDistV = minVisibleH / (2 * halfTanV);
+
+            if (isReset) {
+                const halfW = BOARD_W / 2;
+                const halfH = BOARD_H / 2;
+                const marginV = isPortrait ? 1.20 : 1.12;
+                const marginH = isPortrait ? 1.30 : 1.08;
+                const baseDist = Math.max(
+                    (halfH * marginV) / halfTanV,
+                    (halfW * marginH) / halfTanH,
+                    26
+                );
+                const finalDist = Math.max(baseDist, minDistH, minDistV);
+                controls.target.set(0, 0, 0);
+                const dir = new THREE.Vector3(0.5, 0.22, 1).normalize();
+                camera.position.copy(dir).multiplyScalar(finalDist);
+                controls.update();
+            }
+
+            const dist = camera.position.distanceTo(controls.target);
+            const visibleW = 2 * dist * halfTanH;
+            const visibleH = 2 * dist * halfTanV;
+            const boardWpx = BOARD_W / visibleW * w;
+            const boardHpx = BOARD_H / visibleH * h;
+            currentCenterYRatio = (topMargin + boardHpx / 2) / h;
+
+            applyViewOffset();
+
+            const boardCenterXpx = currentCenterXRatio * w + dragViewOffsetX;
+            const boardCenterYpx = currentCenterYRatio * h + dragViewOffsetY;
+            const boardTopPx = boardCenterYpx - boardHpx / 2;
+            const boardLeftPx = boardCenterXpx - boardWpx / 2;
+            updateDragHandle(boardLeftPx, boardTopPx, boardWpx);
+        }
+
+        function resetCamera() { computeLayout(true); }
+        function refreshLayout() { computeLayout(false); }
+
+        resetCamera();
+
+        /* ================================================================
+         *  九、输入处理
+         * ================================================================ */
+
+        ['pointerdown', 'touchstart', 'keydown'].forEach((evt) => {
+            window.addEventListener(evt, () => initAudio(), { capture: true, passive: true });
+        });
+
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible' && audioCtx && audioCtx.state === 'suspended') {
+                audioCtx.resume().catch(() => {});
+            }
+        });
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'p' || e.key === 'P') { togglePause(); return; }
+            if (e.key === 'r' || e.key === 'R') { startGame(); return; }
+            if (!state.running || state.paused) return;
+
+            switch (e.key) {
+                case 'ArrowLeft':  case 'a': case 'A': movePiece(-1, 0); e.preventDefault(); break;
+                case 'ArrowRight': case 'd': case 'D': movePiece( 1, 0); e.preventDefault(); break;
+                case 'ArrowDown':  case 's': case 'S': if (movePiece(0, 1, 'softDrop')) {
+                                                            state.dropTimer = 0;
+                                                        } e.preventDefault(); break;
+                case 'ArrowUp':    case 'w': case 'W': rotatePiece(); e.preventDefault(); break;
+                case ' ':          hardDrop(); e.preventDefault(); break;
+            }
+        });
+
+        startBtn.addEventListener('click', () => {
+            if (state.paused) { togglePause(); }
+            else { startGame(); }
+        });
+
+        document.getElementById('resetViewBtn').addEventListener('click', () => {
+            resetCamera();
+        });
+
+        document.getElementById('touchPad').classList.add('show');
+
+        const hasTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+        const hintBarEl = document.getElementById('hintBar');
+        if (hintBarEl) hintBarEl.style.display = hasTouch ? 'none' : 'block';
+
+        function bindTouchBtn(id, onFire, opts = {}) {
+            const { repeat = false, initialDelay = 220, repeatInterval = 70 } = opts;
+            const btn = document.getElementById(id);
+            let holdTimer = null;
+            let repeatTimer = null;
+            let activePointer = null;
+
+            const stop = () => {
+                if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; }
+                if (repeatTimer) { clearInterval(repeatTimer); repeatTimer = null; }
+                activePointer = null;
+                btn.classList.remove('pressed');
+            };
+
+            btn.addEventListener('pointerdown', (e) => {
+                if (e.button !== undefined && e.button !== 0) return;
+                e.preventDefault();
+                if (activePointer !== null) return;
+                activePointer = e.pointerId;
+                try { btn.setPointerCapture(e.pointerId); } catch (_) {}
+                btn.classList.add('pressed');
+
+                const fire = () => { if (state.running && !state.paused) onFire(); };
+                fire();
+
+                if (repeat) {
+                    holdTimer = setTimeout(() => {
+                        holdTimer = null;
+                        repeatTimer = setInterval(fire, repeatInterval);
+                    }, initialDelay);
+                }
+            });
+
+            btn.addEventListener('pointerup', stop);
+            btn.addEventListener('pointercancel', stop);
+            btn.addEventListener('lostpointercapture', stop);
+            btn.addEventListener('contextmenu', (e) => e.preventDefault());
+        }
+
+        bindTouchBtn('btnLeft',  () => movePiece(-1, 0), { repeat: true });
+        bindTouchBtn('btnRight', () => movePiece( 1, 0), { repeat: true });
+        bindTouchBtn('btnSoftDrop', () => { if (movePiece(0, 1, 'softDrop')) state.dropTimer = 0; },
+                    { repeat: true, initialDelay: 120, repeatInterval: 60 });
+        bindTouchBtn('btnRotate', () => rotatePiece());
+        bindTouchBtn('btnDrop',   () => hardDrop());
+        document.getElementById('btnPauseTouch').addEventListener('pointerdown', (e) => {
+            e.preventDefault();
+            togglePause();
+        });
+
+        /* ================================================================
+         *  十、主循环
+         * ================================================================ */
+
+        const clock = new THREE.Clock();
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const dt = Math.min(clock.getDelta(), 0.1);
+
+            const camDist = camera.position.distanceTo(controls.target);
+            if (scene.fog) {
+                scene.fog.near = camDist + 20;
+                scene.fog.far = camDist + 60;
+            }
+
+            if (state.running && !state.paused && piece) {
+                state.dropTimer += dt;
+                if (state.dropTimer >= state.dropInterval) {
+                    state.dropTimer = 0;
+                    if (!movePiece(0, 1, null)) {
+                        lockPiece();
+                    }
+                }
+            }
+
+            if (piece && piece.mesh) {
+                const t = performance.now() * 0.004;
+                piece.mesh.scale.setScalar(1 + Math.sin(t) * 0.012);
+            }
+
+            controls.update();
+            renderer.render(scene, camera);
+        }
+        animate();
+
+        /* ---------------- 窗口尺寸变化 ---------------- */
+
+        let lastIsPortrait = window.innerWidth < window.innerHeight;
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+
+            const nowIsPortrait = window.innerWidth < window.innerHeight;
+            if (nowIsPortrait !== lastIsPortrait) {
+                lastIsPortrait = nowIsPortrait;
+                resetCamera();
+            } else {
+                refreshLayout();
+            }
+        });
+
+        /* ---------------- 初始化 ---------------- */
+
+        board = createBoard();
+        updateHud();
+        nextKey = pickNextKey();
+        drawNextPreview();
+
+        console.log('✅ 3D 俄罗斯方块已加载（炫彩方块 / 暗色玻璃背景）');
+    </script>
+</body>
+</html>

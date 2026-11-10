@@ -2,25 +2,34 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8" />
+<!-- 移动端适配：禁止用户缩放，适配刘海屏 -->
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="mobile-web-app-capable" content="yes" />
 <title>彩虹宝石消消乐</title>
 <style>
+  /* ============================================================
+     基础重置
+     ============================================================ */
   * { margin: 0; padding: 0; box-sizing: border-box; }
 
   html, body {
     width: 100%; height: 100%; overflow: hidden;
     background: #04050c;
     font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+    /* 禁止选中文字、长按菜单、点击高亮 —— 避免移动端误触 */
     -webkit-user-select: none; user-select: none;
     -webkit-tap-highlight-color: transparent;
     overscroll-behavior: none;
   }
+
   body {
     display: flex; align-items: center; justify-content: center;
+    /* 页面整体背景：径向渐变营造深空氛围 */
     background: radial-gradient(ellipse at 50% 35%, #101a36 0%, #070a15 45%, #04050c 100%);
   }
+
+  /* 页面氛围光：两团柔和的彩色光晕，固定在屏幕角落 */
   body::before {
     content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 0;
     background:
@@ -28,10 +37,15 @@
       radial-gradient(circle at 84% 82%, rgba(170,60,255,.12), transparent 45%);
   }
 
+  /* ============================================================
+     游戏区域：一个固定宽高比的方框，不占满全屏
+     min(94vw, 90vh) 保证宽高中较小的那个方向留出边距
+     ============================================================ */
   #game-wrap {
     position: relative;
     width: min(94vw, 90vh);
     height: min(94vw, 90vh);
+    /* dvh 处理移动端浏览器地址栏收起/展开导致的高度变化 */
     width: min(94vw, 90dvh);
     height: min(94vw, 90dvh);
     border-radius: 20px;
@@ -44,10 +58,15 @@
       inset 0 1px 0 rgba(255, 255, 255, .06);
     z-index: 1;
   }
+  /* canvas 铺满游戏区域，touch-action: none 禁用浏览器默认触摸行为 */
   #game-wrap canvas { display: block; width: 100%; height: 100%; touch-action: none; }
 
+  /* ============================================================
+     HUD：叠在 canvas 上方，默认不拦截点击
+     ============================================================ */
   #hud { position: absolute; inset: 0; pointer-events: none; z-index: 5; }
 
+  /* 通用信息面板：分数、时间都用这个样式 */
   .panel {
     position: absolute; top: 9px; left: 9px;
     padding: 5px 12px; border-radius: 10px;
@@ -55,21 +74,52 @@
     border: 1px solid rgba(120, 170, 255, .22);
     backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
     box-shadow: 0 5px 18px rgba(0, 0, 0, .4), inset 0 1px 0 rgba(255, 255, 255, .07);
+    pointer-events: none;   /* 面板本身不拦截点击，让点击穿透到棋盘 */
   }
   .label { font-size: 8px; letter-spacing: 3px; color: #7fa8ff; opacity: .9; }
+
+  /* 分数数字 */
   #score {
     display: inline-block;
     font-size: 20px; font-weight: 800; line-height: 1.05; color: #fff;
     text-shadow: 0 0 16px rgba(110, 180, 255, .85), 0 0 38px rgba(80, 140, 255, .45);
+    /* 得分跳动动画：数字短暂放大再弹回 */
     transition: transform .12s cubic-bezier(.34, 1.56, .64, 1);
     transform-origin: left center;
-    font-variant-numeric: tabular-nums;
+    font-variant-numeric: tabular-nums;   /* 等宽数字，跳动时不会左右晃动 */
   }
 
+  /* 时间面板：居中显示，覆盖 .panel 的默认左侧定位 */
+  .timer-panel {
+    left: 50%;
+    transform: translateX(-50%);
+    text-align: center;
+    min-width: 62px;
+  }
+  #timer {
+    display: inline-block;
+    font-size: 20px; font-weight: 800; line-height: 1.05; color: #fff;
+    font-variant-numeric: tabular-nums;
+    text-shadow: 0 0 14px rgba(140, 200, 255, .7);
+    transition: color .25s ease;
+  }
+
+  /* 最后 10 秒的红色脉冲动画：颜色和光晕在红与亮红之间循环 */
+  @keyframes timerPulse {
+    from { color: #ff6b6b; text-shadow: 0 0 10px rgba(255, 60, 60, .75); }
+    to   { color: #ff2e2e; text-shadow: 0 0 26px rgba(255, 50, 50, 1); }
+  }
+  #timer.warning {
+    animation: timerPulse .6s ease-in-out infinite alternate;
+  }
+
+  /* 右上角按钮组 */
   .buttons {
     position: absolute; top: 9px; right: 9px;
     display: flex; gap: 6px;
   }
+
+  /* 通用按钮样式：渐变背景 + 内高光 + 发光阴影 */
   button {
     pointer-events: auto; cursor: pointer; outline: none;
     padding: 8px 12px; border-radius: 9px;
@@ -84,23 +134,83 @@
   button:hover { filter: brightness(1.22); }
   button:active { transform: scale(.93); }
 
+  /* ============================================================
+     遮罩层通用模式：
+     - 显示时 opacity:1, visibility:visible
+     - 隐藏时 opacity:0, pointer-events:none, visibility:hidden
+     关键：用 visibility:hidden 彻底把子元素从命中测试中移除，
+     否则隐藏的卡片仍会拦截棋盘点击（曾导致棋盘中心无法点击）。
+     visibility 的过渡延迟到透明度动画结束后再切换，避免淡出时闪一下。
+     ============================================================ */
+
+  /* 暂停遮罩 */
   #overlay {
     position: absolute; inset: 0; z-index: 10;
     display: flex; align-items: center; justify-content: center;
     background: rgba(4, 7, 18, .74);
     backdrop-filter: blur(9px); -webkit-backdrop-filter: blur(9px);
-    opacity: 1; transition: opacity .25s ease;
+    opacity: 1;
+    visibility: visible;
+    transition: opacity .25s ease, visibility 0s linear 0s;
   }
-  #overlay.hidden { opacity: 0; pointer-events: none; }
+  #overlay.hidden {
+    opacity: 0;
+    pointer-events: none;
+    visibility: hidden;
+    transition: opacity .25s ease, visibility 0s linear .25s;
+  }
 
+  /* 游戏结束遮罩 */
+  #gameover {
+    position: absolute; inset: 0; z-index: 11;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(4, 7, 18, .82);
+    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+    opacity: 1;
+    visibility: visible;
+    transition: opacity .3s ease, visibility 0s linear 0s;
+  }
+  #gameover.hidden {
+    opacity: 0;
+    pointer-events: none;
+    visibility: hidden;
+    transition: opacity .3s ease, visibility 0s linear .3s;
+  }
+
+  /* 开始遮罩：层级最高，盖住一切 */
+  #startOverlay {
+    position: absolute; inset: 0; z-index: 12;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(4, 7, 18, .88);
+    backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+    opacity: 1;
+    visibility: visible;
+    transition: opacity .3s ease, visibility 0s linear 0s;
+  }
+  #startOverlay.hidden {
+    opacity: 0;
+    pointer-events: none;
+    visibility: hidden;
+    transition: opacity .3s ease, visibility 0s linear .3s;
+  }
+
+  /* ============================================================
+     遮罩内的卡片
+     ============================================================ */
   .card {
     text-align: center; padding: 24px 34px; border-radius: 18px;
     background: linear-gradient(180deg, rgba(32, 45, 88, .92), rgba(12, 18, 38, .94));
     border: 1px solid rgba(120, 170, 255, .3);
     box-shadow: 0 18px 50px rgba(0, 0, 0, .6), inset 0 1px 0 rgba(255, 255, 255, .1);
-    transform: scale(1); transition: transform .25s cubic-bezier(.34, 1.4, .64, 1);
+    transform: scale(1);
+    transition: transform .25s cubic-bezier(.34, 1.4, .64, 1);
+    max-width: 88%;
   }
-  #overlay.hidden .card { transform: scale(.9); }
+  /* 遮罩隐藏时卡片缩小一点，产生“收起”的视觉反馈 */
+  #overlay.hidden .card,
+  #gameover.hidden .card,
+  #startOverlay.hidden .card { transform: scale(.9); }
+
   .card h2 {
     color: #d5e8ff; font-size: 16px; letter-spacing: 3px; margin-bottom: 3px;
     text-shadow: 0 0 24px rgba(110, 180, 255, .7);
@@ -108,41 +218,171 @@
   .card p { color: #7fa8ff; font-size: 8px; letter-spacing: 3px; margin-bottom: 16px; }
   .card button { padding: 10px 20px; font-size: 12px; }
 
+  /* 暂停卡片里两个按钮并排 */
+  .card-actions {
+    display: flex; gap: 10px; justify-content: center;
+  }
+  .card-actions button { flex: 1; }
+
+  /* 最终得分展示 */
+  .final-score {
+    color: #a9c4ff; font-size: 11px; letter-spacing: 2px; margin-bottom: 18px;
+  }
+  .final-score span {
+    display: block; margin-top: 4px;
+    font-size: 30px; font-weight: 800; letter-spacing: 0;
+    color: #ffe066;
+    text-shadow: 0 0 22px rgba(255, 210, 80, .65);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ============================================================
+     开始面板专用样式
+     ============================================================ */
+
+  /* 彩虹渐变标题：用 background-clip:text 把七色渐变裁进文字里 */
+  .rainbow-title {
+    font-size: 22px;
+    font-weight: 900;
+    letter-spacing: 2px;
+    white-space: nowrap;   /* 防止七个字换行 */
+    background: linear-gradient(90deg, #ff2b2b, #ff8a00, #ffe000, #22dd55, #18e0dc, #2e6bff, #b44dff);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
+    margin-bottom: 4px;
+    filter: drop-shadow(0 0 14px rgba(120, 180, 255, .5));
+  }
+
+  .time-setting { margin: 8px 0 22px; }
+  .ts-label {
+    color: #8fb0ff; font-size: 10px; letter-spacing: 3px; margin-bottom: 10px;
+  }
+
+  /* 时长调节行：− 数值 + */
+  .time-control {
+    display: flex; align-items: center; justify-content: center; gap: 14px;
+    margin-bottom: 8px;
+  }
+  .tc-btn {
+    width: 42px; height: 42px; padding: 0;
+    font-size: 22px; font-weight: 700; line-height: 1;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 50%;
+  }
+  .tc-value {
+    font-size: 32px; font-weight: 800; color: #fff;
+    font-variant-numeric: tabular-nums;
+    min-width: 96px;
+    text-shadow: 0 0 18px rgba(110, 180, 255, .7);
+  }
+  .ts-hint {
+    color: #5f7fb8; font-size: 9px; letter-spacing: 1px;
+  }
+
+  /* 主行动按钮：开始游戏 */
+  .primary-btn {
+    padding: 12px 32px !important;
+    font-size: 14px !important;
+    letter-spacing: 3px;
+    border-radius: 12px !important;
+    background: linear-gradient(180deg, rgba(96, 160, 255, .95), rgba(40, 80, 200, .95)) !important;
+    box-shadow: 0 8px 24px rgba(60, 130, 255, .45), inset 0 1px 0 rgba(255, 255, 255, .3) !important;
+  }
+
+  /* 移动端小屏适配：整体缩小字号和内边距 */
   @media (max-width: 600px) {
-    #score { font-size: 17px; }
+    #score, #timer { font-size: 17px; }
     .panel { padding: 4px 10px; border-radius: 9px; }
     .label { font-size: 7px; letter-spacing: 2px; }
+    .timer-panel { min-width: 54px; }
     button { padding: 8px 10px; font-size: 10px; border-radius: 8px; }
-    .card { padding: 20px 28px; }
+    .card { padding: 20px 26px; }
     .card h2 { font-size: 14px; }
+    .final-score span { font-size: 26px; }
+    .rainbow-title { font-size: 18px; letter-spacing: 1px; }
+    .tc-btn { width: 38px; height: 38px; font-size: 20px; }
+    .tc-value { font-size: 28px; min-width: 84px; }
+    .primary-btn { padding: 11px 26px !important; font-size: 13px !important; }
   }
 </style>
 </head>
 <body>
 
+<!-- ============================================================
+     游戏主体结构
+     ============================================================ -->
 <div id="game-wrap">
+  <!-- Three.js 渲染画布 -->
   <canvas id="game-canvas"></canvas>
 
+  <!-- 顶部 HUD：分数 / 时间 / 按钮 -->
   <div id="hud">
+    <!-- 分数面板 -->
     <div class="panel">
       <div class="label">分 数</div>
       <div id="score">0</div>
     </div>
+
+    <!-- 时间面板（居中） -->
+    <div class="panel timer-panel">
+      <div class="label">时 间</div>
+      <div id="timer">1:00</div>
+    </div>
+
+    <!-- 右上角操作按钮 -->
     <div class="buttons">
       <button id="pauseBtn">⏸ 暂停</button>
-      <button id="restartBtn">↻ 重开</button>
+      <button id="endBtn">⏹ 结束</button>
     </div>
   </div>
 
+  <!-- 暂停遮罩 -->
   <div id="overlay" class="hidden">
     <div class="card">
       <h2>游戏暂停</h2>
       <p>PAUSED</p>
-      <button id="resumeBtn">▶ 继续游戏</button>
+      <div class="card-actions">
+        <button id="resumeBtn">▶ 继续</button>
+        <button id="quitBtn">⏹ 结束</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 游戏结束遮罩 -->
+  <div id="gameover" class="hidden">
+    <div class="card">
+      <h2>游戏结束</h2>
+      <p>GAME OVER</p>
+      <div class="final-score">最终得分<span id="finalScore">0</span></div>
+      <button id="playAgainBtn">↻ 再玩一次</button>
+    </div>
+  </div>
+
+  <!-- 开始遮罩：页面首次加载时显示，可自定义时长 -->
+  <div id="startOverlay">
+    <div class="card">
+      <div class="rainbow-title">彩虹宝石消消乐</div>
+      <p>MATCH 3+</p>
+      <div class="time-setting">
+        <div class="ts-label">游 戏 时 长</div>
+        <div class="time-control">
+          <button id="minusTime" class="tc-btn">−</button>
+          <div id="setupTime" class="tc-value">1:00</div>
+          <button id="plusTime" class="tc-btn">+</button>
+        </div>
+        <div class="ts-hint">每次调整 30 秒（1 ~ 10 分钟）</div>
+      </div>
+      <button id="startBtn" class="primary-btn">▶ 开 始 游 戏</button>
     </div>
   </div>
 </div>
 
+<!-- ============================================================
+     importmap：声明 three 的 CDN 地址
+     让下面的 import ... from 'three' 能找到模块
+     ============================================================ -->
 <script type="importmap">
 {
   "imports": {
@@ -157,76 +397,133 @@ import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
 /* ============================================================
-   1. 音效系统（Web Audio 合成）
+   1. 音效系统（Web Audio 合成，无需外部音频文件）
+   ------------------------------------------------------------
+   架构：
+     每个音效由 1~4 个振荡器（OscillatorNode）组成，
+     每个振荡器接一个独立的 GainNode 做音量包络，
+     所有 GainNode 汇入 masterGain（主音量），
+     再经过 DynamicsCompressor（压缩器）防止爆音，
+     最后连到扬声器（destination）。
    ============================================================ */
-const AC_CLASS = window.AudioContext || window.webkitAudioContext;
-let audioCtx = null;
-let masterGain = null;
-let compressor = null;
 
+// 兼容不同浏览器的 AudioContext 构造器
+const AC_CLASS = window.AudioContext || window.webkitAudioContext;
+let audioCtx = null;        // 音频上下文（懒初始化）
+let masterGain = null;      // 主增益节点：控制全局音量
+let compressor = null;      // 压缩器：防止多音叠加时爆音
+
+/**
+ * 懒初始化音频上下文、主增益和压缩器。
+ * 必须在用户手势（点击/触摸）里调用，否则浏览器会阻止音频播放。
+ */
 function ensureAudio() {
   if (!AC_CLASS) return null;
   if (!audioCtx) {
     try { audioCtx = new AC_CLASS(); } catch (e) { return null; }
   }
-  if (audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
+  // 如果上下文被浏览器挂起（比如页面切到后台），尝试恢复
+  if (audioCtx.state === 'suspended' && audioCtx.resume) {
+    try { audioCtx.resume(); } catch (e) {}
+  }
 
+  // 首次创建时，搭建主增益 → 压缩器 → 输出 的链路
   if (!masterGain) {
     masterGain = audioCtx.createGain();
-    masterGain.gain.value = 1.9;
+    masterGain.gain.value = 1.9;        // 全局音量倍率
 
     compressor = audioCtx.createDynamicsCompressor();
-    compressor.threshold.value = -18;
-    compressor.knee.value = 12;
-    compressor.ratio.value = 6;
-    compressor.attack.value = 0.003;
-    compressor.release.value = 0.18;
+    compressor.threshold.value = -18;   // 超过 -18dB 开始压缩
+    compressor.knee.value = 12;         // 拐点宽度
+    compressor.ratio.value = 6;         // 压缩比
+    compressor.attack.value = 0.003;    // 起音速度（秒）
+    compressor.release.value = 0.18;    // 释放速度（秒）
 
     masterGain.connect(compressor).connect(audioCtx.destination);
   }
   return audioCtx;
 }
 
+/**
+ * 播放一个音调。
+ * @param {Object} opt
+ * @param {number} opt.freq     起始频率（Hz）
+ * @param {number} [opt.to]     目标频率（Hz），有值则做频率滑音
+ * @param {number} [opt.duration=0.15] 持续时间（秒）
+ * @param {string} [opt.type='sine']   波形：sine/square/triangle/sawtooth
+ * @param {number} [opt.volume=0.2]    音量（0~1）
+ * @param {number} [opt.delay=0]       延迟播放（秒）
+ */
 function playTone({ freq, to, duration = 0.15, type = 'sine', volume = 0.2, delay = 0 }) {
   const ctx = audioCtx;
   if (!ctx || !masterGain) return;
   const t0 = ctx.currentTime + delay;
+
   const osc = ctx.createOscillator();
   const gain = ctx.createGain();
+
   osc.type = type;
   osc.frequency.setValueAtTime(Math.max(freq, 1), t0);
+  // 如果指定了目标频率，做指数滑音（听感更自然）
   if (to) osc.frequency.exponentialRampToValueAtTime(Math.max(to, 1), t0 + duration);
 
+  // 音量包络：快速起音（12ms）→ 按持续时间指数衰减到接近 0
   gain.gain.setValueAtTime(0.0001, t0);
   gain.gain.exponentialRampToValueAtTime(Math.max(volume, 0.0005), t0 + 0.012);
   gain.gain.exponentialRampToValueAtTime(0.0001, t0 + duration);
 
   osc.connect(gain).connect(masterGain);
   osc.start(t0);
-  osc.stop(t0 + duration + 0.04);
+  osc.stop(t0 + duration + 0.04);   // 多留 40ms 余量
 }
 
+/* ------- 各种游戏音效 ------- */
 const SFX = {
+  /** 选中宝石：清脆的双音提示 */
   select() {
     playTone({ freq: 1318.5, duration: 0.09, type: 'sine', volume: 0.22 });
     playTone({ freq: 1975.5, duration: 0.07, type: 'sine', volume: 0.12, delay: 0.03 });
   },
+
+  /** 交换宝石：上行滑音 */
   swap() {
     playTone({ freq: 659.25, to: 987.77, duration: 0.11, type: 'triangle', volume: 0.28 });
   },
+
+  /** 无效交换：低沉的下行锯齿音 */
   invalid() {
     playTone({ freq: 196, to: 123.47, duration: 0.22, type: 'sawtooth', volume: 0.22 });
   },
+
+  /**
+   * 消除宝石：随连锁次数升调的琶音。
+   * chain 越大，基频越高，听感越“爽”。
+   */
   clear(chain) {
-    const step = Math.min(chain - 1, 5) * 2 / 12;
-    const base = 523.25 * Math.pow(2, step);
+    const step = Math.min(chain - 1, 5) * 2 / 12;   // 最多升 10 个半音
+    const base = 523.25 * Math.pow(2, step);        // 以 C5 为基准
     playTone({ freq: base,        duration: 0.11, type: 'triangle', volume: 0.30 });
     playTone({ freq: base * 1.25, duration: 0.13, type: 'sine',     volume: 0.27, delay: 0.045 });
     playTone({ freq: base * 1.5,  duration: 0.17, type: 'sine',     volume: 0.24, delay: 0.09 });
     playTone({ freq: base * 2.0,  duration: 0.15, type: 'sine',     volume: 0.16, delay: 0.13 });
   },
+
+  /** 宝石下落：轻微上行滑音 */
   fall() {
     playTone({ freq: 392, to: 523.25, duration: 0.12, type: 'sine', volume: 0.18 });
+  },
+
+  /** 最后 10 秒的每秒滴答：短促、有穿透力 */
+  warn() {
+    playTone({ freq: 1046.5, duration: 0.07, type: 'square', volume: 0.16 });
+    playTone({ freq: 1568,   duration: 0.05, type: 'sine',   volume: 0.10, delay: 0.02 });
+  },
+
+  /** 时间到 / 游戏结束：下行三音，营造“结束”感 */
+  timeUp() {
+    playTone({ freq: 523.25, duration: 0.25, type: 'triangle', volume: 0.32 });
+    playTone({ freq: 392.00, duration: 0.30, type: 'triangle', volume: 0.30, delay: 0.22 });
+    playTone({ freq: 261.63, duration: 0.55, type: 'sine',     volume: 0.34, delay: 0.46 });
   }
 };
 
@@ -241,67 +538,88 @@ const renderer = new THREE.WebGLRenderer({
   antialias: true,
   powerPreference: 'high-performance'
 });
+// ACES 色调映射：让亮色不过曝、暗色有层次
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.06;
+// 开启阴影，使用软阴影提升质感
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
 /* ============================================================
    3. 场景 & 2D 正交相机
+   ------------------------------------------------------------
+   用 OrthographicCamera 代替 PerspectiveCamera：
+   正交投影没有近大远小，棋盘看起来是平的（2D 俯视感），
+   但宝石仍保留 3D 几何体的高光，兼顾美观和可读性。
    ============================================================ */
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x05060f);
 
+// left/right/top/bottom 初始值随便填，后面 fitCamera() 会重设
 const camera = new THREE.OrthographicCamera(-3, 3, 3, -3, 0.1, 100);
+// 相机放在正上方偏后一点，轻微倾斜约 6°，让宝石侧面露出来
 camera.position.set(0, 14, 1.5);
 camera.lookAt(0, 0, 0);
 
+// 用 RoomEnvironment 生成环境贴图，让宝石有真实的高光反射
 const pmrem = new THREE.PMREMGenerator(renderer);
 scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
 
 /* ============================================================
    4. 灯光
+   ------------------------------------------------------------
+   组合使用多种光源：
+     - 半球光：提供基础环境照明
+     - 主平行光：产生主要阴影和高光
+     - 轮廓光/补光：从背面和侧面勾边
+     - 两个彩色点光源：环绕运动，让宝石高光流动
    ============================================================ */
 scene.add(new THREE.HemisphereLight(0xbfd8ff, 0x0a0c1a, 0.7));
 
+// 主光：右上前方，投射阴影
 const keyLight = new THREE.DirectionalLight(0xffffff, 2.6);
 keyLight.position.set(5, 11, 6);
 keyLight.castShadow = true;
 keyLight.shadow.mapSize.set(512, 512);
 keyLight.shadow.bias = -0.0008;
 keyLight.shadow.normalBias = 0.012;
+// 阴影相机范围要覆盖整个棋盘
 const sc = keyLight.shadow.camera;
 sc.left = -5.0; sc.right = 5.0; sc.top = 5.0; sc.bottom = -5.0;
 sc.near = 1; sc.far = 32;
 scene.add(keyLight);
 
+// 轮廓光：左后方紫色，给边缘加彩
 const rimLight = new THREE.DirectionalLight(0x9a7bff, 1.4);
 rimLight.position.set(-6, 6, -6);
 scene.add(rimLight);
 
+// 补光：左前方青色，平衡暗部
 const fillLight = new THREE.DirectionalLight(0x5ad8ff, 0.9);
 fillLight.position.set(-4, 7, 5);
 scene.add(fillLight);
 
-const pointA = new THREE.PointLight(0x00f0ff, 16, 12, 2);
+// 两个环绕点光源：位置在主循环里随时间变化
+const pointA = new THREE.PointLight(0x00f0ff, 16, 12, 2);  // 青色
 pointA.position.set(-4, 3.5, 4);
 scene.add(pointA);
 
-const pointB = new THREE.PointLight(0xff3fb0, 14, 12, 2);
+const pointB = new THREE.PointLight(0xff3fb0, 14, 12, 2);  // 粉色
 pointB.position.set(4, 3.0, -3.5);
 scene.add(pointB);
 
 /* ============================================================
-   5. 棋盘参数 —— 9 × 9
+   5. 棋盘参数与宝石定义
    ============================================================ */
-const SIZE       = 9;
-const SPACING    = 0.56;
-const OFFSET     = (SIZE - 1) / 2;
-const BOARD_SPAN = SIZE * SPACING;
+const SIZE       = 9;                       // 棋盘 9×9
+const SPACING    = 0.56;                    // 格心间距（世界单位）
+const OFFSET     = (SIZE - 1) / 2;          // 用于把棋盘中心对齐到原点
+const BOARD_SPAN = SIZE * SPACING;          // 棋盘总跨度
 
+// 统一使用正十二面体作为宝石形状
 const DODECA_GEO = new THREE.DodecahedronGeometry(1, 0);
 
-/* ---- 彩虹七色：红橙黄绿青蓝紫 ---- */
+// 彩虹七色：红橙黄绿青蓝紫
 const GEM_COLORS = [
   0xff2b2b,   // 红
   0xff8a00,   // 橙
@@ -312,17 +630,24 @@ const GEM_COLORS = [
   0xb44dff    // 紫
 ];
 
+// 每颗宝石下面的小托盘（格子底座）
 const TRAY_W   = SPACING * 0.94;
 const TRAY_H   = 0.05;
 const TRAY_GEO = new THREE.BoxGeometry(TRAY_W, TRAY_H, TRAY_W);
 
+// 宝石的缩放和高度：让宝石刚好坐在托盘顶面
 const GEM_SCALE = SPACING * 0.34;
 const GEM_Y     = GEM_SCALE + TRAY_H / 2 + 0.002;
 
+/**
+ * 把棋盘坐标 (col, row) 转成世界坐标 Vector3。
+ * 棋盘中心在原点，col 沿 +x，row 沿 +z。
+ */
 function cellToWorld(col, row, y = 0) {
   return new THREE.Vector3((col - OFFSET) * SPACING, y, (row - OFFSET) * SPACING);
 }
 
+// 托盘材质模板：每个宝石创建时 clone 一份并改 emissive
 const TRAY_BASE_MAT = new THREE.MeshStandardMaterial({
   color: 0x0a1220,
   roughness: 0.35,
@@ -330,76 +655,166 @@ const TRAY_BASE_MAT = new THREE.MeshStandardMaterial({
 });
 
 /* ============================================================
-   6. 补间动画
+   6. 补间动画系统
+   ------------------------------------------------------------
+   思路：维护一个 activeTweens 数组，每项记录：
+     t        —— 已过去的时间（负数表示延迟中）
+     duration —— 总时长
+     updateFn —— 每帧回调，参数是缓动后的进度 e ∈ [0,1]
+     easeFn   —— 缓动函数
+     resolve  —— Promise 的 resolve，动画结束时调用
+   tween() 返回 Promise，可以用 await 等待动画完成。
    ============================================================ */
 const activeTweens = [];
+
+// 缓动函数
 const easeInOutQuad = t => t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
 const easeInQuad    = t => t * t;
 const easeOutCubic  = t => 1 - Math.pow(1 - t, 3);
 
+/**
+ * 注册一个补间动画。
+ * @returns {Promise} 动画结束时 resolve
+ */
 function tween(duration, updateFn, easeFn = easeInOutQuad, delay = 0) {
   return new Promise(resolve => {
     activeTweens.push({ t: -delay, duration, updateFn, easeFn, resolve });
   });
 }
 
+/** 每帧推进所有补间动画 */
 function updateTweens(dt) {
   for (let i = activeTweens.length - 1; i >= 0; i--) {
     const tw = activeTweens[i];
     tw.t += dt;
-    if (tw.t < 0) continue;
-    const k = Math.min(1, tw.t / tw.duration);
-    tw.updateFn(tw.easeFn(k), k);
-    if (k >= 1) { activeTweens.splice(i, 1); tw.resolve(); }
+    if (tw.t < 0) continue;                         // 还在延迟阶段
+    const k = Math.min(1, tw.t / tw.duration);      // 线性进度
+    tw.updateFn(tw.easeFn(k), k);                   // 传缓动后进度
+    if (k >= 1) {                                   // 动画结束
+      activeTweens.splice(i, 1);
+      tw.resolve();
+    }
   }
 }
 
 /* ============================================================
    7. 游戏状态
+   ------------------------------------------------------------
+   gameState 四态：
+     'ready'   —— 显示开始面板，棋盘为空，不计时
+     'playing' —— 计时中，可操作棋盘
+     'paused'  —— 暂停，计时和动画都冻结
+     'over'    —— 结束，显示结算面板，不可操作
    ============================================================ */
-let grid = [];
-let gems = [];
+let gameState = 'ready';
+
+// 时长常量：默认 60 秒（1 分钟），范围 1~10 分钟，每次调 30 秒
+const DEFAULT_TIME = 60;
+const MIN_TIME = 60;
+const MAX_TIME = 600;
+const TIME_STEP = 30;
+
+let setupTime = DEFAULT_TIME;   // 开始面板里设置的时长
+let timeLeft  = DEFAULT_TIME;   // 当前剩余时间
+let lastShownSecond = -1;       // 上次显示的秒数，用于避免重复更新
+
+let grid = [];      // grid[row][col] = gem 对象（或 null）
+let gems = [];      // 所有存活宝石的扁平数组
 let score = 0;
-let busy = false;
-let paused = false;
-let selected = null;
-let gen = 0;
+let busy = false;   // 动画进行中，禁止玩家操作
+let selected = null;// 当前选中的宝石
+let gen = 0;        // 世代计数：重开/结束时自增，用于作废旧异步流程
 
-const scoreEl = document.getElementById('score');
-const overlay = document.getElementById('overlay');
+// DOM 引用
+const scoreEl      = document.getElementById('score');
+const timerEl      = document.getElementById('timer');
+const setupTimeEl  = document.getElementById('setupTime');
+const overlay      = document.getElementById('overlay');
+const gameoverEl   = document.getElementById('gameover');
+const startOverlay = document.getElementById('startOverlay');
+const finalScoreEl = document.getElementById('finalScore');
 
-/* ---------- 创建宝石 + 小格子 ---------- */
+/* ---------- 时间格式化与显示 ---------- */
+
+/** 把秒数格式化为 "M:SS" */
+function formatTime(seconds) {
+  const s = Math.max(0, Math.floor(seconds));
+  const m = Math.floor(s / 60);
+  const sec = s % 60;
+  return `${m}:${sec.toString().padStart(2, '0')}`;
+}
+
+/** 刷新开始面板里的时长显示；如果处于 ready 态，同步顶部计时器 */
+function refreshSetupDisplay() {
+  setupTimeEl.textContent = formatTime(setupTime);
+  if (gameState === 'ready') {
+    timeLeft = setupTime;
+    timerEl.textContent = formatTime(setupTime);
+  }
+}
+
+/**
+ * 更新顶部倒计时显示。
+ * 只在“秒数变化”时才更新 DOM 和音效，避免每帧都触发。
+ * 最后 10 秒（s <= 10）会加红色脉冲类并每秒响一声。
+ */
+function updateTimerDisplay() {
+  const s = Math.ceil(timeLeft);
+  if (s === lastShownSecond) return;
+  lastShownSecond = s;
+
+  timerEl.textContent = formatTime(s);
+
+  if (s <= 10 && s > 0) {
+    timerEl.classList.add('warning');
+    SFX.warn();       // 每秒一声滴答
+  } else {
+    timerEl.classList.remove('warning');
+  }
+}
+
+/* ---------- 宝石的创建与销毁 ---------- */
+
+/**
+ * 在棋盘 (col, row) 创建一颗指定类型的宝石。
+ * 每颗宝石是一个 Group，包含：
+ *   - tray：托盘底座
+ *   - mesh：正十二面体宝石本体
+ */
 function createGem(type, col, row) {
   const color = GEM_COLORS[type];
 
   const group = new THREE.Group();
   group.position.copy(cellToWorld(col, row));
 
+  // 托盘：深色金属底座，emissive 用宝石色微微染色
   const trayMat = TRAY_BASE_MAT.clone();
   trayMat.emissive = new THREE.Color(color).multiplyScalar(0.14);
   const tray = new THREE.Mesh(TRAY_GEO, trayMat);
   tray.receiveShadow = true;
   group.add(tray);
 
+  // 宝石本体材质：物理材质，带清漆层和自发光
   const baseEmissive = new THREE.Color(color).multiplyScalar(0.10);
   const gemMat = new THREE.MeshPhysicalMaterial({
     color,
     metalness: 0.15,
     roughness: 0.05,
-    clearcoat: 1.0,
+    clearcoat: 1.0,             // 清漆层：让高光更亮
     clearcoatRoughness: 0.03,
     reflectivity: 1.0,
     envMapIntensity: 1.6,
     emissive: baseEmissive.clone(),
     emissiveIntensity: 1.0,
-    flatShading: true
+    flatShading: true           // 切面质感，棱角分明
   });
-  gemMat.userData.baseEmissive = baseEmissive;
+  gemMat.userData.baseEmissive = baseEmissive;   // 保存基准值，取消选中时恢复
 
   const mesh = new THREE.Mesh(DODECA_GEO, gemMat);
   mesh.scale.setScalar(GEM_SCALE);
   mesh.position.y = GEM_Y;
   mesh.castShadow = true;
+  // 随机初始旋转，让棋盘看起来不那么规整
   mesh.rotation.set(
     (Math.random() - 0.5) * 0.6,
     Math.random() * Math.PI * 2,
@@ -410,19 +825,36 @@ function createGem(type, col, row) {
   scene.add(group);
 
   const gem = { type, col, row, group, mesh, tray };
-  mesh.userData.gem = gem;
+  mesh.userData.gem = gem;   // 反向引用，便于射线拾取
   gems.push(gem);
   return gem;
 }
 
+/** 从场景移除一颗宝石并释放材质内存 */
 function disposeGem(gem) {
   scene.remove(gem.group);
   gem.mesh.material.dispose();
   gem.tray.material.dispose();
 }
 
-/* ---------- 开局 / 重开 ---------- */
-async function initGame() {
+/** 清空棋盘：销毁所有宝石、重置分数、终止所有动画 */
+function clearBoard() {
+  for (const g of gems) disposeGem(g);
+  gems = [];
+  activeTweens.length = 0;
+  selected = null;
+  grid = [];
+  score = 0;
+  updateScore(false);
+  busy = false;
+}
+
+/**
+ * 生成一整块新棋盘。
+ * 逐格随机类型，并用 createsMatchAt 保证开局没有三连/2×2。
+ * 每颗宝石从棋盘上方（row - SIZE - 2）落入，带错开的延迟。
+ */
+async function buildBoard() {
   gen++;
   const myGen = gen;
 
@@ -431,15 +863,13 @@ async function initGame() {
   activeTweens.length = 0;
   selected = null;
   busy = true;
-  paused = false;
-  score = 0;
-  updateScore(false);
 
   grid = Array.from({ length: SIZE }, () => new Array(SIZE).fill(null));
 
   const intro = [];
   for (let r = 0; r < SIZE; r++) {
     for (let c = 0; c < SIZE; c++) {
+      // 随机类型，直到不会在当前位置形成基础匹配
       let type, guard = 0;
       do { type = Math.floor(Math.random() * GEM_COLORS.length); guard++; }
       while (guard < 80 && createsMatchAt(r, c, type));
@@ -447,6 +877,7 @@ async function initGame() {
       const gem = createGem(type, c, r);
       grid[r][c] = gem;
 
+      // 入场动画：从上方落入目标位置
       const target = cellToWorld(c, r);
       const from = cellToWorld(c, r - SIZE - 2);
       gem.group.position.copy(from);
@@ -454,23 +885,30 @@ async function initGame() {
         0.45,
         e => gem.group.position.lerpVectors(from, target, e),
         easeOutCubic,
-        (r + c) * 0.008
+        (r + c) * 0.008      // 越靠右下越晚落下
       ));
     }
   }
 
   await Promise.all(intro);
-  if (myGen !== gen) return;
+  if (myGen !== gen) return;   // 期间被重开/结束了，放弃
   busy = false;
 }
 
-/* 生成时检测：三连 + 2×2 正方形（只保证开局没有基础匹配） */
+/**
+ * 判断在 (row, col) 放 type 类型是否会立刻形成基础匹配。
+ * 用于开局生成时避免一上来就有可消除组合。
+ * 检查：横向三连、纵向三连、四种位置的 2×2 正方形。
+ */
 function createsMatchAt(row, col, type) {
   const t = (r, c) => (grid[r] && grid[r][c]) ? grid[r][c].type : null;
 
+  // 横向三连（新宝石在右端）
   if (col >= 2 && t(row, col - 1) === type && t(row, col - 2) === type) return true;
+  // 纵向三连（新宝石在下端）
   if (row >= 2 && t(row - 1, col) === type && t(row - 2, col) === type) return true;
 
+  // 2×2 正方形：新宝石可能位于四个角，逐个检查
   if (row >= 1 && col >= 1 &&
       t(row - 1, col - 1) === type && t(row - 1, col) === type && t(row, col - 1) === type) return true;
   if (row >= 1 && col < SIZE - 1 &&
@@ -484,13 +922,21 @@ function createsMatchAt(row, col, type) {
 }
 
 /* ============================================================
-   8. 匹配检测：直线三连 + 2×2 正方形
-   —— 找到基础匹配后，把上下左右紧挨着的同色宝石也一并拉入
+   8. 匹配检测（核心算法）
+   ------------------------------------------------------------
+   分两步：
+   第一步：找出所有“基础匹配”
+     - 横向或纵向连续 3+ 同色
+     - 2×2 的四个同色正方形
+   第二步：从基础匹配出发做“传染扩展”
+     - 把与基础匹配宝石上下左右紧挨着的同色宝石也拉进来
+     - 新拉进来的宝石继续向四邻扩展（BFS）
+   最终返回所有要消除的宝石数组。
    ============================================================ */
 function findMatches() {
   const base = new Set();
 
-  // —— 横向 / 纵向 3+ 连 ——
+  // ---- 横向 3+ 连 ----
   for (let r = 0; r < SIZE; r++) {
     let run = 1;
     for (let c = 1; c <= SIZE; c++) {
@@ -498,12 +944,15 @@ function findMatches() {
       const prev = grid[r][c - 1];
       if (cur && prev && cur.type === prev.type) run++;
       else {
-        if (run >= 3) for (let k = c - run; k < c; k++) if (grid[r][k]) base.add(grid[r][k]);
+        if (run >= 3) {
+          for (let k = c - run; k < c; k++) if (grid[r][k]) base.add(grid[r][k]);
+        }
         run = 1;
       }
     }
   }
 
+  // ---- 纵向 3+ 连 ----
   for (let c = 0; c < SIZE; c++) {
     let run = 1;
     for (let r = 1; r <= SIZE; r++) {
@@ -511,13 +960,15 @@ function findMatches() {
       const prev = grid[r - 1][c];
       if (cur && prev && cur.type === prev.type) run++;
       else {
-        if (run >= 3) for (let k = r - run; k < r; k++) if (grid[k][c]) base.add(grid[k][c]);
+        if (run >= 3) {
+          for (let k = r - run; k < r; k++) if (grid[k][c]) base.add(grid[k][c]);
+        }
         run = 1;
       }
     }
   }
 
-  // —— 2×2 正方形 ——
+  // ---- 2×2 正方形 ----
   for (let r = 0; r < SIZE - 1; r++) {
     for (let c = 0; c < SIZE - 1; c++) {
       const a = grid[r][c];
@@ -533,7 +984,7 @@ function findMatches() {
 
   if (base.size === 0) return [];
 
-  // —— 传染扩展：四邻域同色全部拉入（BFS，直到没有新的同色邻居） ——
+  // ---- 传染扩展：四邻域 BFS ----
   const result = new Set(base);
   const queue = [...base];
 
@@ -542,20 +993,19 @@ function findMatches() {
     const r = gem.row;
     const c = gem.col;
 
-    // 上下左右四个方向
     const neighbors = [
-      [r - 1, c],
-      [r + 1, c],
-      [r, c - 1],
-      [r, c + 1]
+      [r - 1, c],   // 上
+      [r + 1, c],   // 下
+      [r, c - 1],   // 左
+      [r, c + 1]    // 右
     ];
 
     for (const [nr, nc] of neighbors) {
       if (nr < 0 || nr >= SIZE || nc < 0 || nc >= SIZE) continue;
       const n = grid[nr][nc];
       if (!n) continue;
-      if (n.type !== gem.type) continue;
-      if (result.has(n)) continue;
+      if (n.type !== gem.type) continue;   // 颜色不同，不传染
+      if (result.has(n)) continue;         // 已经在结果里
       result.add(n);
       queue.push(n);
     }
@@ -567,6 +1017,8 @@ function findMatches() {
 /* ============================================================
    9. 交换 / 消除 / 下落
    ============================================================ */
+
+/** 在逻辑棋盘上交换两颗宝石的位置（只改 grid 和 col/row） */
 function swapInGrid(a, b) {
   const ac = a.col, ar = a.row, bc = b.col, br = b.row;
   grid[ar][ac] = b;
@@ -575,16 +1027,26 @@ function swapInGrid(a, b) {
   b.col = ac; b.row = ar;
 }
 
+/** 判断两颗宝石是否上下左右相邻 */
 function isAdjacent(a, b) {
   return Math.abs(a.col - b.col) + Math.abs(a.row - b.row) === 1;
 }
 
+/** 让一颗宝石平滑移动到它的逻辑位置 (col, row) */
 function moveGemTo(gem, dur = 0.2, ease = easeOutCubic) {
   const from = gem.group.position.clone();
   const to = cellToWorld(gem.col, gem.row);
   return tween(dur, e => gem.group.position.lerpVectors(from, to, e), ease);
 }
 
+/**
+ * 尝试交换两颗相邻宝石。
+ * 流程：
+ *   1. 在棋盘上交换并播放移动动画
+ *   2. 检查是否产生匹配
+ *      - 无匹配：换回去，播放无效音效
+ *      - 有匹配：进入 resolveBoard 处理连锁消除
+ */
 async function trySwap(a, b) {
   const myGen = gen;
   busy = true;
@@ -592,7 +1054,7 @@ async function trySwap(a, b) {
   SFX.swap();
   swapInGrid(a, b);
   await Promise.all([moveGemTo(a, 0.18), moveGemTo(b, 0.18)]);
-  if (myGen !== gen) return;
+  if (myGen !== gen || gameState !== 'playing') return;
 
   if (findMatches().length === 0) {
     SFX.invalid();
@@ -608,6 +1070,15 @@ async function trySwap(a, b) {
   busy = false;
 }
 
+/**
+ * 处理连锁消除。
+ * 每一轮：
+ *   1. findMatches 找出所有要消的宝石
+ *   2. 计分（数量 × 10 × 连锁倍数）
+ *   3. 播放消除动画
+ *   4. 重力下落 + 补充新宝石
+ *   5. 如果新棋盘又有匹配，继续下一轮
+ */
 async function resolveBoard(myGen) {
   let chain = 0;
 
@@ -632,7 +1103,12 @@ async function resolveBoard(myGen) {
   }
 }
 
+/**
+ * 单颗宝石的消除动画：
+ * 缩小 + 上浮 + 旋转，结束后从场景移除。
+ */
 function clearGemAnim(gem) {
+  // 立即从逻辑棋盘和数组移除，防止被重复处理
   if (grid[gem.row] && grid[gem.row][gem.col] === gem) grid[gem.row][gem.col] = null;
   const idx = gems.indexOf(gem);
   if (idx >= 0) gems.splice(idx, 1);
@@ -643,7 +1119,7 @@ function clearGemAnim(gem) {
 
   return tween(0.3, (e) => {
     gem.group.scale.setScalar(Math.max(startScale * (1 - e), 0.001));
-    gem.group.position.y = startY + e * 0.8;
+    gem.group.position.y = startY + e * 0.8;   // 上浮
     gem.mesh.rotation.y += spin * 0.25;
     gem.mesh.rotation.x += spin * 0.12;
   }, easeInQuad).then(() => {
@@ -651,12 +1127,20 @@ function clearGemAnim(gem) {
   });
 }
 
+/**
+ * 重力下落 + 顶部补充。
+ * 对每一列：
+ *   - 从下往上收集非空宝石，写到底部
+ *   - 空出的顶部位置创建新宝石，初始位置在棋盘上方
+ * 返回所有需要做移动动画的宝石（新宝石也在内）。
+ */
 function applyGravityAndRefill() {
   const moved = [];
 
   for (let c = 0; c < SIZE; c++) {
-    let write = SIZE - 1;
+    let write = SIZE - 1;   // 下一个要写入的行（从底部开始）
 
+    // 已有宝石下落
     for (let r = SIZE - 1; r >= 0; r--) {
       const gem = grid[r][c];
       if (!gem) continue;
@@ -669,10 +1153,12 @@ function applyGravityAndRefill() {
       write--;
     }
 
+    // 顶部补充新宝石
     for (let r = write; r >= 0; r--) {
       const type = Math.floor(Math.random() * GEM_COLORS.length);
       const gem = createGem(type, c, r);
       grid[r][c] = gem;
+      // 初始位置放在棋盘上方对应高度，等下做下落动画
       gem.group.position.copy(cellToWorld(c, r - (write + 1)));
       moved.push(gem);
     }
@@ -682,8 +1168,10 @@ function applyGravityAndRefill() {
 }
 
 /* ============================================================
-   10. 选中 / 交互
+   10. 选中与点击交互
    ============================================================ */
+
+/** 选中一颗宝石：白色自发光，并播放选中音效 */
 function selectGem(gem) {
   selected = gem;
   const m = gem.mesh.material;
@@ -692,6 +1180,7 @@ function selectGem(gem) {
   SFX.select();
 }
 
+/** 取消选中：恢复宝石原色、高度和旋转 */
 function deselectGem() {
   if (!selected) return;
   const m = selected.mesh.material;
@@ -702,6 +1191,13 @@ function deselectGem() {
   selected = null;
 }
 
+/**
+ * 点击一颗宝石的处理逻辑：
+ *   - 没有选中：选中它
+ *   - 点的是同一颗：取消选中
+ *   - 点的是相邻宝石：尝试交换
+ *   - 点的是不相邻宝石：改选新的
+ */
 function handleGemClick(gem) {
   if (!selected) { selectGem(gem); return; }
   if (selected === gem) { deselectGem(); return; }
@@ -715,14 +1211,21 @@ function handleGemClick(gem) {
   }
 }
 
+// 射线拾取相关
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
-const boardPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+const boardPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);  // 棋盘所在的 y=0 平面
 const hitPoint = new THREE.Vector3();
 
+/**
+ * 鼠标/触摸按下处理：
+ *   1. 把屏幕坐标转成 NDC，再用射线与 y=0 平面求交，得到点击的世界坐标
+ *   2. 在 gems 里找距离点击点最近、且在容差半径内的宝石
+ *   3. 交给 handleGemClick 处理
+ */
 function onPointerDown(e) {
-  ensureAudio();
-  if (busy || paused) return;
+  ensureAudio();   // 用户手势里初始化音频
+  if (busy || gameState !== 'playing') return;
 
   const rect = canvasEl.getBoundingClientRect();
   pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
@@ -735,10 +1238,11 @@ function onPointerDown(e) {
     return;
   }
 
+  // 容差为 0.7 个格距，格子较小也能准确点中
   let best = null;
   let bestDist = SPACING * 0.7;
   for (const g of gems) {
-    if (grid[g.row]?.[g.col] !== g) continue;
+    if (grid[g.row]?.[g.col] !== g) continue;   // 跳过正在消失/移动的
     const p = cellToWorld(g.col, g.row);
     const dx = p.x - hitPoint.x;
     const dz = p.z - hitPoint.z;
@@ -753,8 +1257,10 @@ function onPointerDown(e) {
 canvasEl.addEventListener('pointerdown', onPointerDown);
 
 /* ============================================================
-   11. UI
+   11. UI 与状态切换
    ============================================================ */
+
+/** 更新分数显示；bump=true 时播放放大弹跳动画 */
 function updateScore(bump) {
   scoreEl.textContent = score;
   if (bump) {
@@ -764,29 +1270,117 @@ function updateScore(bump) {
   }
 }
 
+/** 开始一局新游戏 */
+async function startGame() {
+  gameState = 'playing';
+
+  timeLeft = setupTime;
+  lastShownSecond = -1;
+  timerEl.classList.remove('warning');
+  updateTimerDisplay();
+
+  startOverlay.classList.add('hidden');
+  gameoverEl.classList.add('hidden');
+  overlay.classList.add('hidden');
+
+  await buildBoard();
+}
+
+/**
+ * 结束游戏（手动点结束或时间到）。
+ * 冻结动画、显示结算面板、播放结束音效。
+ */
+function endGame(manual = false) {
+  if (gameState === 'over' || gameState === 'ready') return;
+
+  gameState = 'over';
+  deselectGem();
+  activeTweens.length = 0;   // 清空进行中的动画
+  busy = false;
+
+  finalScoreEl.textContent = score;
+  gameoverEl.classList.remove('hidden');
+  overlay.classList.add('hidden');
+  SFX.timeUp();
+}
+
+/** 回到开始界面：清空棋盘、重置计时、显示开始面板 */
+function goToStart() {
+  gameState = 'ready';
+
+  clearBoard();
+  timeLeft = setupTime;
+  lastShownSecond = -1;
+  timerEl.classList.remove('warning');
+  timerEl.textContent = formatTime(setupTime);
+
+  overlay.classList.add('hidden');
+  gameoverEl.classList.add('hidden');
+  startOverlay.classList.remove('hidden');
+}
+
+/* ---------- 按钮事件绑定 ---------- */
+
+// 开始面板：减少时长
+document.getElementById('minusTime').addEventListener('click', () => {
+  ensureAudio();
+  setupTime = Math.max(MIN_TIME, setupTime - TIME_STEP);
+  refreshSetupDisplay();
+});
+
+// 开始面板：增加时长
+document.getElementById('plusTime').addEventListener('click', () => {
+  ensureAudio();
+  setupTime = Math.min(MAX_TIME, setupTime + TIME_STEP);
+  refreshSetupDisplay();
+});
+
+// 开始游戏
+document.getElementById('startBtn').addEventListener('click', () => {
+  ensureAudio();
+  if (gameState === 'ready') startGame();
+});
+
+// 暂停
 document.getElementById('pauseBtn').addEventListener('click', () => {
   ensureAudio();
-  if (paused || busy) return;
-  paused = true;
+  if (gameState !== 'playing') return;
+  gameState = 'paused';
   overlay.classList.remove('hidden');
 });
 
+// 暂停面板：继续
 document.getElementById('resumeBtn').addEventListener('click', () => {
   ensureAudio();
-  paused = false;
+  if (gameState !== 'paused') return;
+  gameState = 'playing';
   overlay.classList.add('hidden');
-  clock.getDelta();
 });
 
-document.getElementById('restartBtn').addEventListener('click', () => {
+// 顶部：结束
+document.getElementById('endBtn').addEventListener('click', () => {
   ensureAudio();
-  overlay.classList.add('hidden');
-  paused = false;
-  initGame();
+  endGame(true);
+});
+
+// 暂停面板：结束
+document.getElementById('quitBtn').addEventListener('click', () => {
+  ensureAudio();
+  endGame(true);
+});
+
+// 结束面板：再玩一次（回到开始界面）
+document.getElementById('playAgainBtn').addEventListener('click', () => {
+  ensureAudio();
+  goToStart();
 });
 
 /* ============================================================
    12. 相机自适应
+   ------------------------------------------------------------
+   根据游戏区域宽高比，计算正交相机的视口大小，
+   让整个棋盘（带一点边距）刚好装进画面。
+   上方多留一点空间给 HUD。
    ============================================================ */
 function fitCamera() {
   const w = wrap.clientWidth;
@@ -796,13 +1390,15 @@ function fitCamera() {
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.setSize(w, h, false);
 
+  // 棋盘外框：棋盘总跨度 + 四周各半格留白
   const boardOuter = BOARD_SPAN + SPACING * 1.0;
-  const viewSize = boardOuter * 1.10;
+  const viewSize = boardOuter * 1.10;   // 再放大 10% 作为安全边距
 
   const aspect = w / h;
   const halfH = viewSize / 2;
   const halfW = halfH * aspect;
 
+  // 视野整体上移一点 → 棋盘在屏幕上略偏下，给顶部 HUD 让空间
   const topShift = viewSize * 0.05;
 
   camera.left = -halfW;
@@ -813,29 +1409,54 @@ function fitCamera() {
 }
 
 window.addEventListener('resize', fitCamera);
+// 用 ResizeObserver 监听游戏区域尺寸变化（比如移动端地址栏收起）
 if (window.ResizeObserver) new ResizeObserver(fitCamera).observe(wrap);
 
 /* ============================================================
    13. 主循环
+   ------------------------------------------------------------
+   每一帧：
+     - 计算 delta（真实时间差，限制上限 0.5s）
+     - 若在游戏中：扣倒计时、更新显示、推进补间、选中宝石的浮动
+     - 若不在暂停/结束：更新环绕灯光位置
+     - 渲染
    ============================================================ */
-const clock = new THREE.Clock();
-let elapsed = 0;
+let lastTime = performance.now();
+let elapsed = 0;    // 累计时间，用于正弦动画
 
 function animate() {
   requestAnimationFrame(animate);
 
-  const dt = Math.min(clock.getDelta(), 0.05);
+  const now = performance.now();
+  let delta = (now - lastTime) / 1000;
+  lastTime = now;
+  // 限制单帧最大时间差，防止切后台回来后瞬间扣掉大量时间
+  if (delta > 0.5) delta = 0.5;
 
-  if (!paused) {
-    elapsed += dt;
-    updateTweens(dt);
+  if (gameState === 'playing') {
+    // 倒计时
+    timeLeft = Math.max(0, timeLeft - delta);
+    updateTimerDisplay();
 
-    if (selected && !busy) {
-      selected.mesh.rotation.y += dt * 2.4;
-      selected.mesh.position.y = GEM_Y + 0.03 + Math.sin(elapsed * 8) * 0.015;
-      selected.mesh.rotation.x = Math.sin(elapsed * 3) * 0.10;
+    if (timeLeft <= 0) {
+      endGame();
+    } else {
+      // 游戏逻辑：补间动画用固定上限，保证手感一致
+      const dt = Math.min(delta, 0.05);
+      updateTweens(dt);
+
+      // 选中宝石的呼吸浮动 + 缓慢自转
+      if (selected && !busy) {
+        selected.mesh.rotation.y += dt * 2.4;
+        selected.mesh.position.y = GEM_Y + 0.03 + Math.sin(elapsed * 8) * 0.015;
+        selected.mesh.rotation.x = Math.sin(elapsed * 3) * 0.10;
+      }
     }
+  }
 
+  // 灯光环绕：暂停/结束时不推进
+  if (gameState !== 'paused' && gameState !== 'over') {
+    elapsed += delta;
     pointA.position.x = Math.sin(elapsed * 0.6) * 4.5;
     pointA.position.z = Math.cos(elapsed * 0.6) * 4.5;
     pointB.position.x = Math.sin(elapsed * 0.6 + Math.PI) * 4.5;
@@ -848,9 +1469,9 @@ function animate() {
 /* ============================================================
    14. 启动
    ============================================================ */
-fitCamera();
-initGame();
-animate();
+fitCamera();     // 初始化相机视口
+goToStart();     // 显示开始面板，等待玩家点击“开始游戏”
+animate();       // 启动渲染循环
 </script>
 </body>
 </html>

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="mobile-web-app-capable" content="yes" />
-<title>2D 宝石消消乐</title>
+<title>彩虹宝石消消乐</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -34,7 +34,7 @@
     height: min(94vw, 90vh);
     width: min(94vw, 90dvh);
     height: min(94vw, 90dvh);
-    border-radius: 18px;
+    border-radius: 20px;
     overflow: hidden;
     background: #05060f;
     border: 1px solid rgba(120, 170, 255, .20);
@@ -49,17 +49,17 @@
   #hud { position: absolute; inset: 0; pointer-events: none; z-index: 5; }
 
   .panel {
-    position: absolute; top: 7px; left: 7px;
-    padding: 4px 10px; border-radius: 9px;
+    position: absolute; top: 9px; left: 9px;
+    padding: 5px 12px; border-radius: 10px;
     background: rgba(14, 21, 45, .62);
     border: 1px solid rgba(120, 170, 255, .22);
     backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
     box-shadow: 0 5px 18px rgba(0, 0, 0, .4), inset 0 1px 0 rgba(255, 255, 255, .07);
   }
-  .label { font-size: 7px; letter-spacing: 2.5px; color: #7fa8ff; opacity: .9; }
+  .label { font-size: 8px; letter-spacing: 3px; color: #7fa8ff; opacity: .9; }
   #score {
     display: inline-block;
-    font-size: 17px; font-weight: 800; line-height: 1.05; color: #fff;
+    font-size: 20px; font-weight: 800; line-height: 1.05; color: #fff;
     text-shadow: 0 0 16px rgba(110, 180, 255, .85), 0 0 38px rgba(80, 140, 255, .45);
     transition: transform .12s cubic-bezier(.34, 1.56, .64, 1);
     transform-origin: left center;
@@ -67,13 +67,13 @@
   }
 
   .buttons {
-    position: absolute; top: 7px; right: 7px;
-    display: flex; gap: 5px;
+    position: absolute; top: 9px; right: 9px;
+    display: flex; gap: 6px;
   }
   button {
     pointer-events: auto; cursor: pointer; outline: none;
-    padding: 7px 10px; border-radius: 8px;
-    font-size: 10px; font-weight: 700; letter-spacing: .3px;
+    padding: 8px 12px; border-radius: 9px;
+    font-size: 11px; font-weight: 700; letter-spacing: .3px;
     color: #e2f0ff; font-family: inherit; white-space: nowrap;
     background: linear-gradient(180deg, rgba(72, 124, 224, .84), rgba(32, 58, 138, .84));
     border: 1px solid rgba(130, 180, 255, .38);
@@ -94,7 +94,7 @@
   #overlay.hidden { opacity: 0; pointer-events: none; }
 
   .card {
-    text-align: center; padding: 22px 32px; border-radius: 16px;
+    text-align: center; padding: 24px 34px; border-radius: 18px;
     background: linear-gradient(180deg, rgba(32, 45, 88, .92), rgba(12, 18, 38, .94));
     border: 1px solid rgba(120, 170, 255, .3);
     box-shadow: 0 18px 50px rgba(0, 0, 0, .6), inset 0 1px 0 rgba(255, 255, 255, .1);
@@ -102,19 +102,19 @@
   }
   #overlay.hidden .card { transform: scale(.9); }
   .card h2 {
-    color: #d5e8ff; font-size: 15px; letter-spacing: 3px; margin-bottom: 3px;
+    color: #d5e8ff; font-size: 16px; letter-spacing: 3px; margin-bottom: 3px;
     text-shadow: 0 0 24px rgba(110, 180, 255, .7);
   }
-  .card p { color: #7fa8ff; font-size: 8px; letter-spacing: 3px; margin-bottom: 14px; }
-  .card button { padding: 9px 18px; font-size: 11px; }
+  .card p { color: #7fa8ff; font-size: 8px; letter-spacing: 3px; margin-bottom: 16px; }
+  .card button { padding: 10px 20px; font-size: 12px; }
 
   @media (max-width: 600px) {
-    #score { font-size: 15px; }
-    .panel { padding: 3px 8px; border-radius: 8px; }
-    .label { font-size: 6.5px; letter-spacing: 2px; }
-    button { padding: 7px 9px; font-size: 9.5px; border-radius: 7px; }
-    .card { padding: 18px 26px; }
-    .card h2 { font-size: 13px; }
+    #score { font-size: 17px; }
+    .panel { padding: 4px 10px; border-radius: 9px; }
+    .label { font-size: 7px; letter-spacing: 2px; }
+    button { padding: 8px 10px; font-size: 10px; border-radius: 8px; }
+    .card { padding: 20px 28px; }
+    .card h2 { font-size: 14px; }
   }
 </style>
 </head>
@@ -157,7 +157,81 @@ import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
 /* ============================================================
-   1. 渲染器 —— 曝光调高，让亮色更通透
+   1. 音效系统（Web Audio 合成）
+   ============================================================ */
+const AC_CLASS = window.AudioContext || window.webkitAudioContext;
+let audioCtx = null;
+let masterGain = null;
+let compressor = null;
+
+function ensureAudio() {
+  if (!AC_CLASS) return null;
+  if (!audioCtx) {
+    try { audioCtx = new AC_CLASS(); } catch (e) { return null; }
+  }
+  if (audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
+
+  if (!masterGain) {
+    masterGain = audioCtx.createGain();
+    masterGain.gain.value = 1.9;
+
+    compressor = audioCtx.createDynamicsCompressor();
+    compressor.threshold.value = -18;
+    compressor.knee.value = 12;
+    compressor.ratio.value = 6;
+    compressor.attack.value = 0.003;
+    compressor.release.value = 0.18;
+
+    masterGain.connect(compressor).connect(audioCtx.destination);
+  }
+  return audioCtx;
+}
+
+function playTone({ freq, to, duration = 0.15, type = 'sine', volume = 0.2, delay = 0 }) {
+  const ctx = audioCtx;
+  if (!ctx || !masterGain) return;
+  const t0 = ctx.currentTime + delay;
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = type;
+  osc.frequency.setValueAtTime(Math.max(freq, 1), t0);
+  if (to) osc.frequency.exponentialRampToValueAtTime(Math.max(to, 1), t0 + duration);
+
+  gain.gain.setValueAtTime(0.0001, t0);
+  gain.gain.exponentialRampToValueAtTime(Math.max(volume, 0.0005), t0 + 0.012);
+  gain.gain.exponentialRampToValueAtTime(0.0001, t0 + duration);
+
+  osc.connect(gain).connect(masterGain);
+  osc.start(t0);
+  osc.stop(t0 + duration + 0.04);
+}
+
+const SFX = {
+  select() {
+    playTone({ freq: 1318.5, duration: 0.09, type: 'sine', volume: 0.22 });
+    playTone({ freq: 1975.5, duration: 0.07, type: 'sine', volume: 0.12, delay: 0.03 });
+  },
+  swap() {
+    playTone({ freq: 659.25, to: 987.77, duration: 0.11, type: 'triangle', volume: 0.28 });
+  },
+  invalid() {
+    playTone({ freq: 196, to: 123.47, duration: 0.22, type: 'sawtooth', volume: 0.22 });
+  },
+  clear(chain) {
+    const step = Math.min(chain - 1, 5) * 2 / 12;
+    const base = 523.25 * Math.pow(2, step);
+    playTone({ freq: base,        duration: 0.11, type: 'triangle', volume: 0.30 });
+    playTone({ freq: base * 1.25, duration: 0.13, type: 'sine',     volume: 0.27, delay: 0.045 });
+    playTone({ freq: base * 1.5,  duration: 0.17, type: 'sine',     volume: 0.24, delay: 0.09 });
+    playTone({ freq: base * 2.0,  duration: 0.15, type: 'sine',     volume: 0.16, delay: 0.13 });
+  },
+  fall() {
+    playTone({ freq: 392, to: 523.25, duration: 0.12, type: 'sine', volume: 0.18 });
+  }
+};
+
+/* ============================================================
+   2. 渲染器
    ============================================================ */
 const wrap     = document.getElementById('game-wrap');
 const canvasEl = document.getElementById('game-canvas');
@@ -168,12 +242,12 @@ const renderer = new THREE.WebGLRenderer({
   powerPreference: 'high-performance'
 });
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.32;             // ↑ 更亮
+renderer.toneMappingExposure = 1.06;
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
 /* ============================================================
-   2. 场景 & 2D 正交相机
+   3. 场景 & 2D 正交相机
    ============================================================ */
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x05060f);
@@ -186,66 +260,64 @@ const pmrem = new THREE.PMREMGenerator(renderer);
 scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
 
 /* ============================================================
-   3. 灯光
+   4. 灯光
    ============================================================ */
-scene.add(new THREE.HemisphereLight(0xbfd8ff, 0x0a0c1a, 0.9));   // ↑
+scene.add(new THREE.HemisphereLight(0xbfd8ff, 0x0a0c1a, 0.7));
 
-const keyLight = new THREE.DirectionalLight(0xffffff, 3.2);       // ↑
+const keyLight = new THREE.DirectionalLight(0xffffff, 2.6);
 keyLight.position.set(5, 11, 6);
 keyLight.castShadow = true;
 keyLight.shadow.mapSize.set(512, 512);
 keyLight.shadow.bias = -0.0008;
 keyLight.shadow.normalBias = 0.012;
 const sc = keyLight.shadow.camera;
-sc.left = -5.2; sc.right = 5.2; sc.top = 5.2; sc.bottom = -5.2;
-sc.near = 1; sc.far = 30;
+sc.left = -5.0; sc.right = 5.0; sc.top = 5.0; sc.bottom = -5.0;
+sc.near = 1; sc.far = 32;
 scene.add(keyLight);
 
-const rimLight = new THREE.DirectionalLight(0x9a7bff, 2.0);       // ↑
+const rimLight = new THREE.DirectionalLight(0x9a7bff, 1.4);
 rimLight.position.set(-6, 6, -6);
 scene.add(rimLight);
 
-const fillLight = new THREE.DirectionalLight(0x5ad8ff, 1.4);      // ↑
+const fillLight = new THREE.DirectionalLight(0x5ad8ff, 0.9);
 fillLight.position.set(-4, 7, 5);
 scene.add(fillLight);
 
-const pointA = new THREE.PointLight(0x00f0ff, 24, 14, 2);         // ↑
+const pointA = new THREE.PointLight(0x00f0ff, 16, 12, 2);
 pointA.position.set(-4, 3.5, 4);
 scene.add(pointA);
 
-const pointB = new THREE.PointLight(0xff3fb0, 22, 14, 2);         // ↑
+const pointB = new THREE.PointLight(0xff3fb0, 14, 12, 2);
 pointB.position.set(4, 3.0, -3.5);
 scene.add(pointB);
 
 /* ============================================================
-   4. 棋盘参数
+   5. 棋盘参数 —— 9 × 9
    ============================================================ */
-const SIZE       = 14;
+const SIZE       = 9;
 const SPACING    = 0.56;
 const OFFSET     = (SIZE - 1) / 2;
 const BOARD_SPAN = SIZE * SPACING;
 
-/* ---- 统一形状：正十二面体 ---- */
 const DODECA_GEO = new THREE.DodecahedronGeometry(1, 0);
 
-/* ---- 六种明亮荧光色 ---- */
+/* ---- 彩虹七色：红橙黄绿青蓝紫 ---- */
 const GEM_COLORS = [
-  0xff3b7d,   // 亮玫红
-  0x3d8bff,   // 亮蓝
-  0x3bff8e,   // 亮绿
-  0xffef4d,   // 亮黄
-  0xc968ff,   // 亮紫
-  0x3df4ff    // 亮青
+  0xff2b2b,   // 红
+  0xff8a00,   // 橙
+  0xffe000,   // 黄
+  0x22dd55,   // 绿
+  0x18e0dc,   // 青
+  0x2e6bff,   // 蓝
+  0xb44dff    // 紫
 ];
 
-/* ---- 小格子（托盘） ---- */
 const TRAY_W   = SPACING * 0.94;
 const TRAY_H   = 0.05;
 const TRAY_GEO = new THREE.BoxGeometry(TRAY_W, TRAY_H, TRAY_W);
 
-/* ---- 宝石尺寸 ---- */
-const GEM_SCALE = SPACING * 0.30;
-const GEM_Y     = GEM_SCALE * 0.80 + TRAY_H / 2 + 0.004;
+const GEM_SCALE = SPACING * 0.34;
+const GEM_Y     = GEM_SCALE + TRAY_H / 2 + 0.002;
 
 function cellToWorld(col, row, y = 0) {
   return new THREE.Vector3((col - OFFSET) * SPACING, y, (row - OFFSET) * SPACING);
@@ -258,7 +330,7 @@ const TRAY_BASE_MAT = new THREE.MeshStandardMaterial({
 });
 
 /* ============================================================
-   5. 补间动画
+   6. 补间动画
    ============================================================ */
 const activeTweens = [];
 const easeInOutQuad = t => t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
@@ -283,7 +355,7 @@ function updateTweens(dt) {
 }
 
 /* ============================================================
-   6. 游戏状态
+   7. 游戏状态
    ============================================================ */
 let grid = [];
 let gems = [];
@@ -303,23 +375,21 @@ function createGem(type, col, row) {
   const group = new THREE.Group();
   group.position.copy(cellToWorld(col, row));
 
-  /* --- 托盘：亮色微光，颜色呼应宝石 --- */
   const trayMat = TRAY_BASE_MAT.clone();
-  trayMat.emissive = new THREE.Color(color).multiplyScalar(0.20);
+  trayMat.emissive = new THREE.Color(color).multiplyScalar(0.14);
   const tray = new THREE.Mesh(TRAY_GEO, trayMat);
   tray.receiveShadow = true;
   group.add(tray);
 
-  /* --- 正十二面体宝石：亮色 + 较强自发光 --- */
-  const baseEmissive = new THREE.Color(color).multiplyScalar(0.30);   // ↑ 更亮
+  const baseEmissive = new THREE.Color(color).multiplyScalar(0.10);
   const gemMat = new THREE.MeshPhysicalMaterial({
     color,
-    metalness: 0.10,              // ↓ 降低金属度，颜色更鲜
+    metalness: 0.15,
     roughness: 0.05,
     clearcoat: 1.0,
     clearcoatRoughness: 0.03,
     reflectivity: 1.0,
-    envMapIntensity: 1.9,
+    envMapIntensity: 1.6,
     emissive: baseEmissive.clone(),
     emissiveIntensity: 1.0,
     flatShading: true
@@ -372,7 +442,7 @@ async function initGame() {
     for (let c = 0; c < SIZE; c++) {
       let type, guard = 0;
       do { type = Math.floor(Math.random() * GEM_COLORS.length); guard++; }
-      while (guard < 60 && createsMatchAt(r, c, type));
+      while (guard < 80 && createsMatchAt(r, c, type));
 
       const gem = createGem(type, c, r);
       grid[r][c] = gem;
@@ -381,7 +451,7 @@ async function initGame() {
       const from = cellToWorld(c, r - SIZE - 2);
       gem.group.position.copy(from);
       intro.push(tween(
-        0.42,
+        0.45,
         e => gem.group.position.lerpVectors(from, target, e),
         easeOutCubic,
         (r + c) * 0.008
@@ -394,18 +464,33 @@ async function initGame() {
   busy = false;
 }
 
+/* 生成时检测：三连 + 2×2 正方形（只保证开局没有基础匹配） */
 function createsMatchAt(row, col, type) {
-  if (col >= 2 && grid[row][col - 1]?.type === type && grid[row][col - 2]?.type === type) return true;
-  if (row >= 2 && grid[row - 1][col]?.type === type && grid[row - 2][col]?.type === type) return true;
+  const t = (r, c) => (grid[r] && grid[r][c]) ? grid[r][c].type : null;
+
+  if (col >= 2 && t(row, col - 1) === type && t(row, col - 2) === type) return true;
+  if (row >= 2 && t(row - 1, col) === type && t(row - 2, col) === type) return true;
+
+  if (row >= 1 && col >= 1 &&
+      t(row - 1, col - 1) === type && t(row - 1, col) === type && t(row, col - 1) === type) return true;
+  if (row >= 1 && col < SIZE - 1 &&
+      t(row - 1, col + 1) === type && t(row - 1, col) === type && t(row, col + 1) === type) return true;
+  if (row < SIZE - 1 && col >= 1 &&
+      t(row + 1, col - 1) === type && t(row + 1, col) === type && t(row, col - 1) === type) return true;
+  if (row < SIZE - 1 && col < SIZE - 1 &&
+      t(row + 1, col + 1) === type && t(row + 1, col) === type && t(row, col + 1) === type) return true;
+
   return false;
 }
 
 /* ============================================================
-   7. 匹配检测
+   8. 匹配检测：直线三连 + 2×2 正方形
+   —— 找到基础匹配后，把上下左右紧挨着的同色宝石也一并拉入
    ============================================================ */
 function findMatches() {
-  const matched = new Set();
+  const base = new Set();
 
+  // —— 横向 / 纵向 3+ 连 ——
   for (let r = 0; r < SIZE; r++) {
     let run = 1;
     for (let c = 1; c <= SIZE; c++) {
@@ -413,7 +498,7 @@ function findMatches() {
       const prev = grid[r][c - 1];
       if (cur && prev && cur.type === prev.type) run++;
       else {
-        if (run >= 3) for (let k = c - run; k < c; k++) if (grid[r][k]) matched.add(grid[r][k]);
+        if (run >= 3) for (let k = c - run; k < c; k++) if (grid[r][k]) base.add(grid[r][k]);
         run = 1;
       }
     }
@@ -426,17 +511,61 @@ function findMatches() {
       const prev = grid[r - 1][c];
       if (cur && prev && cur.type === prev.type) run++;
       else {
-        if (run >= 3) for (let k = r - run; k < r; k++) if (grid[k][c]) matched.add(grid[k][c]);
+        if (run >= 3) for (let k = r - run; k < r; k++) if (grid[k][c]) base.add(grid[k][c]);
         run = 1;
       }
     }
   }
 
-  return [...matched];
+  // —— 2×2 正方形 ——
+  for (let r = 0; r < SIZE - 1; r++) {
+    for (let c = 0; c < SIZE - 1; c++) {
+      const a = grid[r][c];
+      const b = grid[r][c + 1];
+      const cc = grid[r + 1][c];
+      const d = grid[r + 1][c + 1];
+      if (a && b && cc && d &&
+          a.type === b.type && a.type === cc.type && a.type === d.type) {
+        base.add(a); base.add(b); base.add(cc); base.add(d);
+      }
+    }
+  }
+
+  if (base.size === 0) return [];
+
+  // —— 传染扩展：四邻域同色全部拉入（BFS，直到没有新的同色邻居） ——
+  const result = new Set(base);
+  const queue = [...base];
+
+  while (queue.length) {
+    const gem = queue.pop();
+    const r = gem.row;
+    const c = gem.col;
+
+    // 上下左右四个方向
+    const neighbors = [
+      [r - 1, c],
+      [r + 1, c],
+      [r, c - 1],
+      [r, c + 1]
+    ];
+
+    for (const [nr, nc] of neighbors) {
+      if (nr < 0 || nr >= SIZE || nc < 0 || nc >= SIZE) continue;
+      const n = grid[nr][nc];
+      if (!n) continue;
+      if (n.type !== gem.type) continue;
+      if (result.has(n)) continue;
+      result.add(n);
+      queue.push(n);
+    }
+  }
+
+  return [...result];
 }
 
 /* ============================================================
-   8. 交换 / 消除 / 下落
+   9. 交换 / 消除 / 下落
    ============================================================ */
 function swapInGrid(a, b) {
   const ac = a.col, ar = a.row, bc = b.col, br = b.row;
@@ -460,13 +589,15 @@ async function trySwap(a, b) {
   const myGen = gen;
   busy = true;
 
+  SFX.swap();
   swapInGrid(a, b);
-  await Promise.all([moveGemTo(a, 0.16), moveGemTo(b, 0.16)]);
+  await Promise.all([moveGemTo(a, 0.18), moveGemTo(b, 0.18)]);
   if (myGen !== gen) return;
 
   if (findMatches().length === 0) {
+    SFX.invalid();
     swapInGrid(a, b);
-    await Promise.all([moveGemTo(a, 0.16), moveGemTo(b, 0.16)]);
+    await Promise.all([moveGemTo(a, 0.18), moveGemTo(b, 0.18)]);
     if (myGen !== gen) return;
     busy = false;
     return;
@@ -487,6 +618,7 @@ async function resolveBoard(myGen) {
     chain++;
     score += matches.length * 10 * chain;
     updateScore(true);
+    SFX.clear(chain);
 
     await Promise.all(matches.map(g => clearGemAnim(g)));
     if (myGen !== gen) return;
@@ -494,7 +626,8 @@ async function resolveBoard(myGen) {
     const fallen = applyGravityAndRefill();
     if (myGen !== gen) return;
 
-    await Promise.all(fallen.map(g => moveGemTo(g, 0.24)));
+    if (fallen.length) SFX.fall();
+    await Promise.all(fallen.map(g => moveGemTo(g, 0.26)));
     if (myGen !== gen) return;
   }
 }
@@ -508,7 +641,7 @@ function clearGemAnim(gem) {
   const startY = gem.group.position.y;
   const spin = Math.random() > 0.5 ? 1 : -1;
 
-  return tween(0.28, (e) => {
+  return tween(0.3, (e) => {
     gem.group.scale.setScalar(Math.max(startScale * (1 - e), 0.001));
     gem.group.position.y = startY + e * 0.8;
     gem.mesh.rotation.y += spin * 0.25;
@@ -549,13 +682,14 @@ function applyGravityAndRefill() {
 }
 
 /* ============================================================
-   9. 选中 / 交互
+   10. 选中 / 交互
    ============================================================ */
 function selectGem(gem) {
   selected = gem;
   const m = gem.mesh.material;
   m.emissive.setHex(0xffffff);
-  m.emissiveIntensity = 0.50;      // ↑ 选中更亮
+  m.emissiveIntensity = 0.45;
+  SFX.select();
 }
 
 function deselectGem() {
@@ -587,6 +721,7 @@ const boardPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 const hitPoint = new THREE.Vector3();
 
 function onPointerDown(e) {
+  ensureAudio();
   if (busy || paused) return;
 
   const rect = canvasEl.getBoundingClientRect();
@@ -601,7 +736,7 @@ function onPointerDown(e) {
   }
 
   let best = null;
-  let bestDist = SPACING * 0.62;
+  let bestDist = SPACING * 0.7;
   for (const g of gems) {
     if (grid[g.row]?.[g.col] !== g) continue;
     const p = cellToWorld(g.col, g.row);
@@ -618,37 +753,40 @@ function onPointerDown(e) {
 canvasEl.addEventListener('pointerdown', onPointerDown);
 
 /* ============================================================
-   10. UI
+   11. UI
    ============================================================ */
 function updateScore(bump) {
   scoreEl.textContent = score;
   if (bump) {
-    scoreEl.style.transform = 'scale(1.26)';
+    scoreEl.style.transform = 'scale(1.28)';
     clearTimeout(updateScore._t);
     updateScore._t = setTimeout(() => { scoreEl.style.transform = 'scale(1)'; }, 130);
   }
 }
 
 document.getElementById('pauseBtn').addEventListener('click', () => {
+  ensureAudio();
   if (paused || busy) return;
   paused = true;
   overlay.classList.remove('hidden');
 });
 
 document.getElementById('resumeBtn').addEventListener('click', () => {
+  ensureAudio();
   paused = false;
   overlay.classList.add('hidden');
   clock.getDelta();
 });
 
 document.getElementById('restartBtn').addEventListener('click', () => {
+  ensureAudio();
   overlay.classList.add('hidden');
   paused = false;
   initGame();
 });
 
 /* ============================================================
-   11. 相机自适应
+   12. 相机自适应
    ============================================================ */
 function fitCamera() {
   const w = wrap.clientWidth;
@@ -678,7 +816,7 @@ window.addEventListener('resize', fitCamera);
 if (window.ResizeObserver) new ResizeObserver(fitCamera).observe(wrap);
 
 /* ============================================================
-   12. 主循环
+   13. 主循环
    ============================================================ */
 const clock = new THREE.Clock();
 let elapsed = 0;
@@ -708,7 +846,7 @@ function animate() {
 }
 
 /* ============================================================
-   13. 启动
+   14. 启动
    ============================================================ */
 fitCamera();
 initGame();

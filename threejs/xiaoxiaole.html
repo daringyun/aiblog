@@ -1,0 +1,718 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="mobile-web-app-capable" content="yes" />
+<title>2D 宝石消消乐</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html, body {
+    width: 100%; height: 100%; overflow: hidden;
+    background: #04050c;
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+    -webkit-user-select: none; user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    overscroll-behavior: none;
+  }
+  body {
+    display: flex; align-items: center; justify-content: center;
+    background: radial-gradient(ellipse at 50% 35%, #101a36 0%, #070a15 45%, #04050c 100%);
+  }
+  body::before {
+    content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 0;
+    background:
+      radial-gradient(circle at 18% 12%, rgba(70,120,255,.14), transparent 45%),
+      radial-gradient(circle at 84% 82%, rgba(170,60,255,.12), transparent 45%);
+  }
+
+  #game-wrap {
+    position: relative;
+    width: min(94vw, 90vh);
+    height: min(94vw, 90vh);
+    width: min(94vw, 90dvh);
+    height: min(94vw, 90dvh);
+    border-radius: 18px;
+    overflow: hidden;
+    background: #05060f;
+    border: 1px solid rgba(120, 170, 255, .20);
+    box-shadow:
+      0 24px 60px rgba(0, 0, 0, .78),
+      0 0 60px rgba(50, 100, 255, .10),
+      inset 0 1px 0 rgba(255, 255, 255, .06);
+    z-index: 1;
+  }
+  #game-wrap canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+
+  #hud { position: absolute; inset: 0; pointer-events: none; z-index: 5; }
+
+  .panel {
+    position: absolute; top: 7px; left: 7px;
+    padding: 4px 10px; border-radius: 9px;
+    background: rgba(14, 21, 45, .62);
+    border: 1px solid rgba(120, 170, 255, .22);
+    backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+    box-shadow: 0 5px 18px rgba(0, 0, 0, .4), inset 0 1px 0 rgba(255, 255, 255, .07);
+  }
+  .label { font-size: 7px; letter-spacing: 2.5px; color: #7fa8ff; opacity: .9; }
+  #score {
+    display: inline-block;
+    font-size: 17px; font-weight: 800; line-height: 1.05; color: #fff;
+    text-shadow: 0 0 16px rgba(110, 180, 255, .85), 0 0 38px rgba(80, 140, 255, .45);
+    transition: transform .12s cubic-bezier(.34, 1.56, .64, 1);
+    transform-origin: left center;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .buttons {
+    position: absolute; top: 7px; right: 7px;
+    display: flex; gap: 5px;
+  }
+  button {
+    pointer-events: auto; cursor: pointer; outline: none;
+    padding: 7px 10px; border-radius: 8px;
+    font-size: 10px; font-weight: 700; letter-spacing: .3px;
+    color: #e2f0ff; font-family: inherit; white-space: nowrap;
+    background: linear-gradient(180deg, rgba(72, 124, 224, .84), rgba(32, 58, 138, .84));
+    border: 1px solid rgba(130, 180, 255, .38);
+    box-shadow: 0 4px 14px rgba(40, 90, 220, .32), inset 0 1px 0 rgba(255, 255, 255, .22);
+    transition: transform .12s ease, filter .12s ease;
+    touch-action: manipulation;
+  }
+  button:hover { filter: brightness(1.22); }
+  button:active { transform: scale(.93); }
+
+  #overlay {
+    position: absolute; inset: 0; z-index: 10;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(4, 7, 18, .74);
+    backdrop-filter: blur(9px); -webkit-backdrop-filter: blur(9px);
+    opacity: 1; transition: opacity .25s ease;
+  }
+  #overlay.hidden { opacity: 0; pointer-events: none; }
+
+  .card {
+    text-align: center; padding: 22px 32px; border-radius: 16px;
+    background: linear-gradient(180deg, rgba(32, 45, 88, .92), rgba(12, 18, 38, .94));
+    border: 1px solid rgba(120, 170, 255, .3);
+    box-shadow: 0 18px 50px rgba(0, 0, 0, .6), inset 0 1px 0 rgba(255, 255, 255, .1);
+    transform: scale(1); transition: transform .25s cubic-bezier(.34, 1.4, .64, 1);
+  }
+  #overlay.hidden .card { transform: scale(.9); }
+  .card h2 {
+    color: #d5e8ff; font-size: 15px; letter-spacing: 3px; margin-bottom: 3px;
+    text-shadow: 0 0 24px rgba(110, 180, 255, .7);
+  }
+  .card p { color: #7fa8ff; font-size: 8px; letter-spacing: 3px; margin-bottom: 14px; }
+  .card button { padding: 9px 18px; font-size: 11px; }
+
+  @media (max-width: 600px) {
+    #score { font-size: 15px; }
+    .panel { padding: 3px 8px; border-radius: 8px; }
+    .label { font-size: 6.5px; letter-spacing: 2px; }
+    button { padding: 7px 9px; font-size: 9.5px; border-radius: 7px; }
+    .card { padding: 18px 26px; }
+    .card h2 { font-size: 13px; }
+  }
+</style>
+</head>
+<body>
+
+<div id="game-wrap">
+  <canvas id="game-canvas"></canvas>
+
+  <div id="hud">
+    <div class="panel">
+      <div class="label">分 数</div>
+      <div id="score">0</div>
+    </div>
+    <div class="buttons">
+      <button id="pauseBtn">⏸ 暂停</button>
+      <button id="restartBtn">↻ 重开</button>
+    </div>
+  </div>
+
+  <div id="overlay" class="hidden">
+    <div class="card">
+      <h2>游戏暂停</h2>
+      <p>PAUSED</p>
+      <button id="resumeBtn">▶ 继续游戏</button>
+    </div>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ============================================================
+   1. 渲染器 —— 曝光调高，让亮色更通透
+   ============================================================ */
+const wrap     = document.getElementById('game-wrap');
+const canvasEl = document.getElementById('game-canvas');
+
+const renderer = new THREE.WebGLRenderer({
+  canvas: canvasEl,
+  antialias: true,
+  powerPreference: 'high-performance'
+});
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.32;             // ↑ 更亮
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+/* ============================================================
+   2. 场景 & 2D 正交相机
+   ============================================================ */
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x05060f);
+
+const camera = new THREE.OrthographicCamera(-3, 3, 3, -3, 0.1, 100);
+camera.position.set(0, 14, 1.5);
+camera.lookAt(0, 0, 0);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+/* ============================================================
+   3. 灯光
+   ============================================================ */
+scene.add(new THREE.HemisphereLight(0xbfd8ff, 0x0a0c1a, 0.9));   // ↑
+
+const keyLight = new THREE.DirectionalLight(0xffffff, 3.2);       // ↑
+keyLight.position.set(5, 11, 6);
+keyLight.castShadow = true;
+keyLight.shadow.mapSize.set(512, 512);
+keyLight.shadow.bias = -0.0008;
+keyLight.shadow.normalBias = 0.012;
+const sc = keyLight.shadow.camera;
+sc.left = -5.2; sc.right = 5.2; sc.top = 5.2; sc.bottom = -5.2;
+sc.near = 1; sc.far = 30;
+scene.add(keyLight);
+
+const rimLight = new THREE.DirectionalLight(0x9a7bff, 2.0);       // ↑
+rimLight.position.set(-6, 6, -6);
+scene.add(rimLight);
+
+const fillLight = new THREE.DirectionalLight(0x5ad8ff, 1.4);      // ↑
+fillLight.position.set(-4, 7, 5);
+scene.add(fillLight);
+
+const pointA = new THREE.PointLight(0x00f0ff, 24, 14, 2);         // ↑
+pointA.position.set(-4, 3.5, 4);
+scene.add(pointA);
+
+const pointB = new THREE.PointLight(0xff3fb0, 22, 14, 2);         // ↑
+pointB.position.set(4, 3.0, -3.5);
+scene.add(pointB);
+
+/* ============================================================
+   4. 棋盘参数
+   ============================================================ */
+const SIZE       = 14;
+const SPACING    = 0.56;
+const OFFSET     = (SIZE - 1) / 2;
+const BOARD_SPAN = SIZE * SPACING;
+
+/* ---- 统一形状：正十二面体 ---- */
+const DODECA_GEO = new THREE.DodecahedronGeometry(1, 0);
+
+/* ---- 六种明亮荧光色 ---- */
+const GEM_COLORS = [
+  0xff3b7d,   // 亮玫红
+  0x3d8bff,   // 亮蓝
+  0x3bff8e,   // 亮绿
+  0xffef4d,   // 亮黄
+  0xc968ff,   // 亮紫
+  0x3df4ff    // 亮青
+];
+
+/* ---- 小格子（托盘） ---- */
+const TRAY_W   = SPACING * 0.94;
+const TRAY_H   = 0.05;
+const TRAY_GEO = new THREE.BoxGeometry(TRAY_W, TRAY_H, TRAY_W);
+
+/* ---- 宝石尺寸 ---- */
+const GEM_SCALE = SPACING * 0.30;
+const GEM_Y     = GEM_SCALE * 0.80 + TRAY_H / 2 + 0.004;
+
+function cellToWorld(col, row, y = 0) {
+  return new THREE.Vector3((col - OFFSET) * SPACING, y, (row - OFFSET) * SPACING);
+}
+
+const TRAY_BASE_MAT = new THREE.MeshStandardMaterial({
+  color: 0x0a1220,
+  roughness: 0.35,
+  metalness: 0.7
+});
+
+/* ============================================================
+   5. 补间动画
+   ============================================================ */
+const activeTweens = [];
+const easeInOutQuad = t => t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+const easeInQuad    = t => t * t;
+const easeOutCubic  = t => 1 - Math.pow(1 - t, 3);
+
+function tween(duration, updateFn, easeFn = easeInOutQuad, delay = 0) {
+  return new Promise(resolve => {
+    activeTweens.push({ t: -delay, duration, updateFn, easeFn, resolve });
+  });
+}
+
+function updateTweens(dt) {
+  for (let i = activeTweens.length - 1; i >= 0; i--) {
+    const tw = activeTweens[i];
+    tw.t += dt;
+    if (tw.t < 0) continue;
+    const k = Math.min(1, tw.t / tw.duration);
+    tw.updateFn(tw.easeFn(k), k);
+    if (k >= 1) { activeTweens.splice(i, 1); tw.resolve(); }
+  }
+}
+
+/* ============================================================
+   6. 游戏状态
+   ============================================================ */
+let grid = [];
+let gems = [];
+let score = 0;
+let busy = false;
+let paused = false;
+let selected = null;
+let gen = 0;
+
+const scoreEl = document.getElementById('score');
+const overlay = document.getElementById('overlay');
+
+/* ---------- 创建宝石 + 小格子 ---------- */
+function createGem(type, col, row) {
+  const color = GEM_COLORS[type];
+
+  const group = new THREE.Group();
+  group.position.copy(cellToWorld(col, row));
+
+  /* --- 托盘：亮色微光，颜色呼应宝石 --- */
+  const trayMat = TRAY_BASE_MAT.clone();
+  trayMat.emissive = new THREE.Color(color).multiplyScalar(0.20);
+  const tray = new THREE.Mesh(TRAY_GEO, trayMat);
+  tray.receiveShadow = true;
+  group.add(tray);
+
+  /* --- 正十二面体宝石：亮色 + 较强自发光 --- */
+  const baseEmissive = new THREE.Color(color).multiplyScalar(0.30);   // ↑ 更亮
+  const gemMat = new THREE.MeshPhysicalMaterial({
+    color,
+    metalness: 0.10,              // ↓ 降低金属度，颜色更鲜
+    roughness: 0.05,
+    clearcoat: 1.0,
+    clearcoatRoughness: 0.03,
+    reflectivity: 1.0,
+    envMapIntensity: 1.9,
+    emissive: baseEmissive.clone(),
+    emissiveIntensity: 1.0,
+    flatShading: true
+  });
+  gemMat.userData.baseEmissive = baseEmissive;
+
+  const mesh = new THREE.Mesh(DODECA_GEO, gemMat);
+  mesh.scale.setScalar(GEM_SCALE);
+  mesh.position.y = GEM_Y;
+  mesh.castShadow = true;
+  mesh.rotation.set(
+    (Math.random() - 0.5) * 0.6,
+    Math.random() * Math.PI * 2,
+    (Math.random() - 0.5) * 0.6
+  );
+  group.add(mesh);
+
+  scene.add(group);
+
+  const gem = { type, col, row, group, mesh, tray };
+  mesh.userData.gem = gem;
+  gems.push(gem);
+  return gem;
+}
+
+function disposeGem(gem) {
+  scene.remove(gem.group);
+  gem.mesh.material.dispose();
+  gem.tray.material.dispose();
+}
+
+/* ---------- 开局 / 重开 ---------- */
+async function initGame() {
+  gen++;
+  const myGen = gen;
+
+  for (const g of gems) disposeGem(g);
+  gems = [];
+  activeTweens.length = 0;
+  selected = null;
+  busy = true;
+  paused = false;
+  score = 0;
+  updateScore(false);
+
+  grid = Array.from({ length: SIZE }, () => new Array(SIZE).fill(null));
+
+  const intro = [];
+  for (let r = 0; r < SIZE; r++) {
+    for (let c = 0; c < SIZE; c++) {
+      let type, guard = 0;
+      do { type = Math.floor(Math.random() * GEM_COLORS.length); guard++; }
+      while (guard < 60 && createsMatchAt(r, c, type));
+
+      const gem = createGem(type, c, r);
+      grid[r][c] = gem;
+
+      const target = cellToWorld(c, r);
+      const from = cellToWorld(c, r - SIZE - 2);
+      gem.group.position.copy(from);
+      intro.push(tween(
+        0.42,
+        e => gem.group.position.lerpVectors(from, target, e),
+        easeOutCubic,
+        (r + c) * 0.008
+      ));
+    }
+  }
+
+  await Promise.all(intro);
+  if (myGen !== gen) return;
+  busy = false;
+}
+
+function createsMatchAt(row, col, type) {
+  if (col >= 2 && grid[row][col - 1]?.type === type && grid[row][col - 2]?.type === type) return true;
+  if (row >= 2 && grid[row - 1][col]?.type === type && grid[row - 2][col]?.type === type) return true;
+  return false;
+}
+
+/* ============================================================
+   7. 匹配检测
+   ============================================================ */
+function findMatches() {
+  const matched = new Set();
+
+  for (let r = 0; r < SIZE; r++) {
+    let run = 1;
+    for (let c = 1; c <= SIZE; c++) {
+      const cur = c < SIZE ? grid[r][c] : null;
+      const prev = grid[r][c - 1];
+      if (cur && prev && cur.type === prev.type) run++;
+      else {
+        if (run >= 3) for (let k = c - run; k < c; k++) if (grid[r][k]) matched.add(grid[r][k]);
+        run = 1;
+      }
+    }
+  }
+
+  for (let c = 0; c < SIZE; c++) {
+    let run = 1;
+    for (let r = 1; r <= SIZE; r++) {
+      const cur = r < SIZE ? grid[r][c] : null;
+      const prev = grid[r - 1][c];
+      if (cur && prev && cur.type === prev.type) run++;
+      else {
+        if (run >= 3) for (let k = r - run; k < r; k++) if (grid[k][c]) matched.add(grid[k][c]);
+        run = 1;
+      }
+    }
+  }
+
+  return [...matched];
+}
+
+/* ============================================================
+   8. 交换 / 消除 / 下落
+   ============================================================ */
+function swapInGrid(a, b) {
+  const ac = a.col, ar = a.row, bc = b.col, br = b.row;
+  grid[ar][ac] = b;
+  grid[br][bc] = a;
+  a.col = bc; a.row = br;
+  b.col = ac; b.row = ar;
+}
+
+function isAdjacent(a, b) {
+  return Math.abs(a.col - b.col) + Math.abs(a.row - b.row) === 1;
+}
+
+function moveGemTo(gem, dur = 0.2, ease = easeOutCubic) {
+  const from = gem.group.position.clone();
+  const to = cellToWorld(gem.col, gem.row);
+  return tween(dur, e => gem.group.position.lerpVectors(from, to, e), ease);
+}
+
+async function trySwap(a, b) {
+  const myGen = gen;
+  busy = true;
+
+  swapInGrid(a, b);
+  await Promise.all([moveGemTo(a, 0.16), moveGemTo(b, 0.16)]);
+  if (myGen !== gen) return;
+
+  if (findMatches().length === 0) {
+    swapInGrid(a, b);
+    await Promise.all([moveGemTo(a, 0.16), moveGemTo(b, 0.16)]);
+    if (myGen !== gen) return;
+    busy = false;
+    return;
+  }
+
+  await resolveBoard(myGen);
+  if (myGen !== gen) return;
+  busy = false;
+}
+
+async function resolveBoard(myGen) {
+  let chain = 0;
+
+  while (true) {
+    const matches = findMatches();
+    if (matches.length === 0) break;
+
+    chain++;
+    score += matches.length * 10 * chain;
+    updateScore(true);
+
+    await Promise.all(matches.map(g => clearGemAnim(g)));
+    if (myGen !== gen) return;
+
+    const fallen = applyGravityAndRefill();
+    if (myGen !== gen) return;
+
+    await Promise.all(fallen.map(g => moveGemTo(g, 0.24)));
+    if (myGen !== gen) return;
+  }
+}
+
+function clearGemAnim(gem) {
+  if (grid[gem.row] && grid[gem.row][gem.col] === gem) grid[gem.row][gem.col] = null;
+  const idx = gems.indexOf(gem);
+  if (idx >= 0) gems.splice(idx, 1);
+
+  const startScale = gem.group.scale.x;
+  const startY = gem.group.position.y;
+  const spin = Math.random() > 0.5 ? 1 : -1;
+
+  return tween(0.28, (e) => {
+    gem.group.scale.setScalar(Math.max(startScale * (1 - e), 0.001));
+    gem.group.position.y = startY + e * 0.8;
+    gem.mesh.rotation.y += spin * 0.25;
+    gem.mesh.rotation.x += spin * 0.12;
+  }, easeInQuad).then(() => {
+    disposeGem(gem);
+  });
+}
+
+function applyGravityAndRefill() {
+  const moved = [];
+
+  for (let c = 0; c < SIZE; c++) {
+    let write = SIZE - 1;
+
+    for (let r = SIZE - 1; r >= 0; r--) {
+      const gem = grid[r][c];
+      if (!gem) continue;
+      if (r !== write) {
+        grid[write][c] = gem;
+        grid[r][c] = null;
+        gem.row = write;
+        moved.push(gem);
+      }
+      write--;
+    }
+
+    for (let r = write; r >= 0; r--) {
+      const type = Math.floor(Math.random() * GEM_COLORS.length);
+      const gem = createGem(type, c, r);
+      grid[r][c] = gem;
+      gem.group.position.copy(cellToWorld(c, r - (write + 1)));
+      moved.push(gem);
+    }
+  }
+
+  return moved;
+}
+
+/* ============================================================
+   9. 选中 / 交互
+   ============================================================ */
+function selectGem(gem) {
+  selected = gem;
+  const m = gem.mesh.material;
+  m.emissive.setHex(0xffffff);
+  m.emissiveIntensity = 0.50;      // ↑ 选中更亮
+}
+
+function deselectGem() {
+  if (!selected) return;
+  const m = selected.mesh.material;
+  m.emissive.copy(m.userData.baseEmissive);
+  m.emissiveIntensity = 1.0;
+  selected.mesh.position.y = GEM_Y;
+  selected.mesh.rotation.x = 0;
+  selected = null;
+}
+
+function handleGemClick(gem) {
+  if (!selected) { selectGem(gem); return; }
+  if (selected === gem) { deselectGem(); return; }
+  if (isAdjacent(selected, gem)) {
+    const a = selected;
+    deselectGem();
+    trySwap(a, gem);
+  } else {
+    deselectGem();
+    selectGem(gem);
+  }
+}
+
+const raycaster = new THREE.Raycaster();
+const pointer = new THREE.Vector2();
+const boardPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+const hitPoint = new THREE.Vector3();
+
+function onPointerDown(e) {
+  if (busy || paused) return;
+
+  const rect = canvasEl.getBoundingClientRect();
+  pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+  pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+
+  raycaster.setFromCamera(pointer, camera);
+
+  if (!raycaster.ray.intersectPlane(boardPlane, hitPoint)) {
+    deselectGem();
+    return;
+  }
+
+  let best = null;
+  let bestDist = SPACING * 0.62;
+  for (const g of gems) {
+    if (grid[g.row]?.[g.col] !== g) continue;
+    const p = cellToWorld(g.col, g.row);
+    const dx = p.x - hitPoint.x;
+    const dz = p.z - hitPoint.z;
+    const d = Math.sqrt(dx * dx + dz * dz);
+    if (d < bestDist) { bestDist = d; best = g; }
+  }
+
+  if (!best) { deselectGem(); return; }
+  handleGemClick(best);
+}
+
+canvasEl.addEventListener('pointerdown', onPointerDown);
+
+/* ============================================================
+   10. UI
+   ============================================================ */
+function updateScore(bump) {
+  scoreEl.textContent = score;
+  if (bump) {
+    scoreEl.style.transform = 'scale(1.26)';
+    clearTimeout(updateScore._t);
+    updateScore._t = setTimeout(() => { scoreEl.style.transform = 'scale(1)'; }, 130);
+  }
+}
+
+document.getElementById('pauseBtn').addEventListener('click', () => {
+  if (paused || busy) return;
+  paused = true;
+  overlay.classList.remove('hidden');
+});
+
+document.getElementById('resumeBtn').addEventListener('click', () => {
+  paused = false;
+  overlay.classList.add('hidden');
+  clock.getDelta();
+});
+
+document.getElementById('restartBtn').addEventListener('click', () => {
+  overlay.classList.add('hidden');
+  paused = false;
+  initGame();
+});
+
+/* ============================================================
+   11. 相机自适应
+   ============================================================ */
+function fitCamera() {
+  const w = wrap.clientWidth;
+  const h = wrap.clientHeight;
+  if (!w || !h) return;
+
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setSize(w, h, false);
+
+  const boardOuter = BOARD_SPAN + SPACING * 1.0;
+  const viewSize = boardOuter * 1.10;
+
+  const aspect = w / h;
+  const halfH = viewSize / 2;
+  const halfW = halfH * aspect;
+
+  const topShift = viewSize * 0.05;
+
+  camera.left = -halfW;
+  camera.right = halfW;
+  camera.top = halfH + topShift;
+  camera.bottom = -halfH + topShift;
+  camera.updateProjectionMatrix();
+}
+
+window.addEventListener('resize', fitCamera);
+if (window.ResizeObserver) new ResizeObserver(fitCamera).observe(wrap);
+
+/* ============================================================
+   12. 主循环
+   ============================================================ */
+const clock = new THREE.Clock();
+let elapsed = 0;
+
+function animate() {
+  requestAnimationFrame(animate);
+
+  const dt = Math.min(clock.getDelta(), 0.05);
+
+  if (!paused) {
+    elapsed += dt;
+    updateTweens(dt);
+
+    if (selected && !busy) {
+      selected.mesh.rotation.y += dt * 2.4;
+      selected.mesh.position.y = GEM_Y + 0.03 + Math.sin(elapsed * 8) * 0.015;
+      selected.mesh.rotation.x = Math.sin(elapsed * 3) * 0.10;
+    }
+
+    pointA.position.x = Math.sin(elapsed * 0.6) * 4.5;
+    pointA.position.z = Math.cos(elapsed * 0.6) * 4.5;
+    pointB.position.x = Math.sin(elapsed * 0.6 + Math.PI) * 4.5;
+    pointB.position.z = Math.cos(elapsed * 0.6 + Math.PI) * 4.5;
+  }
+
+  renderer.render(scene, camera);
+}
+
+/* ============================================================
+   13. 启动
+   ============================================================ */
+fitCamera();
+initGame();
+animate();
+</script>
+</body>
+</html>

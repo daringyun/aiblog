@@ -1,0 +1,864 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<title>Three.js 88键重锤钢琴</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #07090c; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+                 "Microsoft YaHei", sans-serif;
+    -webkit-user-select: none; user-select: none;
+  }
+  canvas { display: block; touch-action: none; }
+
+  /* ---------- 顶部信息 ---------- */
+  .hud {
+    position: fixed; left: 22px; top: 18px;
+    color: #cfd8e6; pointer-events: none;
+    text-shadow: 0 2px 14px rgba(0, 0, 0, .9);
+  }
+  .hud h1 { font-size: 17px; margin: 0 0 9px; font-weight: 600; letter-spacing: .5px; }
+  .hud p { margin: 4px 0; font-size: 12px; opacity: .62; line-height: 1.75; }
+  kbd {
+    display: inline-block; padding: 1px 6px; margin: 0 1px; border-radius: 4px;
+    background: rgba(255,255,255,.09);
+    border: 1px solid rgba(255,255,255,.16);
+    border-bottom-width: 2px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 11px; color: #e8eefc;
+  }
+
+  /* ---------- 音名 / 力度条 ---------- */
+  #note {
+    position: fixed; left: 50%; bottom: 38px; transform: translateX(-50%);
+    font-size: 46px; font-weight: 200; letter-spacing: 3px;
+    color: #7fc4ff; opacity: 0;
+    pointer-events: none;
+    text-shadow: 0 0 34px rgba(80, 170, 255, .65);
+    transition: opacity .3s ease;
+  }
+  #note.show { opacity: .92; }
+
+  #velbar {
+    position: fixed; left: 50%; bottom: 96px; transform: translateX(-50%);
+    width: 160px; height: 4px; border-radius: 2px;
+    background: rgba(255,255,255,.09); overflow: hidden;
+    opacity: 0; transition: opacity .25s ease;
+    pointer-events: none;
+  }
+  #velbar.show { opacity: 1; }
+  #velfill {
+    height: 100%; width: 0%;
+    background: linear-gradient(90deg, #3b7bff, #7fd3ff);
+    transition: width .1s linear;
+  }
+
+  /* ---------- 一键横屏按钮 ---------- */
+  #fsBtn {
+    position: fixed; right: 14px; top: 14px; z-index: 30;
+    display: flex; align-items: center; gap: 6px;
+    padding: 9px 15px; border-radius: 999px;
+    font-family: inherit;
+    font-size: 13px; font-weight: 600; letter-spacing: .4px;
+    color: #e8f2ff;
+    background: rgba(28, 40, 60, .74);
+    border: 1px solid rgba(120, 180, 255, .34);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    box-shadow: 0 6px 24px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.08);
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    transition: transform .15s ease, background .2s ease;
+  }
+  #fsBtn:active { transform: scale(.94); background: rgba(40, 70, 120, .82); }
+  #fsBtn.hidden { display: none; }
+
+  /* ---------- 请旋转手机提示 ---------- */
+  #rotateHint {
+    position: fixed; inset: 0; z-index: 40;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 20px;
+    background: rgba(4, 6, 10, .88);
+    color: #cfe3ff; font-size: 15px; letter-spacing: 1px;
+    opacity: 0; pointer-events: none;
+    transition: opacity .3s ease;
+    backdrop-filter: blur(4px);
+  }
+  #rotateHint.show { opacity: 1; pointer-events: auto; }
+  #rotateHint .rh-icon {
+    font-size: 58px; line-height: 1;
+    animation: rotatePhone 1.8s ease-in-out infinite;
+    filter: drop-shadow(0 0 22px rgba(90, 170, 255, .55));
+  }
+  #rotateHint .rh-sub { font-size: 12px; opacity: .55; }
+  @keyframes rotatePhone {
+    0%, 22%   { transform: rotate(0deg); }
+    55%, 100% { transform: rotate(90deg); }
+  }
+
+  /* ---------- 加载提示 ---------- */
+  #loading {
+    position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+    color: #5f6c80; font-size: 14px; letter-spacing: 1px; z-index: 50;
+    background: #07090c; transition: opacity .4s ease;
+  }
+
+  /* ---------- 小屏 / 横屏适配 ---------- */
+  @media (max-width: 700px), (max-height: 520px) {
+    .hud { left: 12px; top: 10px; }
+    .hud h1 { font-size: 13px; margin-bottom: 5px; }
+    .hud p { font-size: 10px; line-height: 1.6; }
+    .hud p:nth-of-type(n+3) { display: none; }
+    #fsBtn { right: 10px; top: 10px; padding: 7px 12px; font-size: 12px; }
+    #note { font-size: 30px; bottom: 18px; }
+    #velbar { bottom: 62px; width: 120px; }
+  }
+</style>
+</head>
+<body>
+
+<div id="loading">正在加载 Three.js…</div>
+
+<button id="fsBtn">
+  <span id="fsIcon">⤢</span><span id="fsText">横屏</span>
+</button>
+
+<div id="rotateHint">
+  <div class="rh-icon">📱</div>
+  <div>请将手机横过来</div>
+  <div class="rh-sub">当前浏览器不支持自动旋转，请手动旋转设备</div>
+</div>
+
+<div class="hud">
+  <h1>🎹 88 键重锤钢琴</h1>
+  <p>
+    白键 <kbd>Z</kbd><kbd>X</kbd><kbd>C</kbd><kbd>V</kbd><kbd>B</kbd><kbd>N</kbd><kbd>M</kbd>
+    &nbsp;·&nbsp;
+    <kbd>Q</kbd><kbd>W</kbd><kbd>E</kbd><kbd>R</kbd><kbd>T</kbd><kbd>Y</kbd><kbd>U</kbd>
+  </p>
+  <p>
+    黑键 <kbd>S</kbd><kbd>D</kbd><kbd>G</kbd><kbd>H</kbd><kbd>J</kbd>
+    &nbsp;·&nbsp;
+    <kbd>2</kbd><kbd>3</kbd><kbd>5</kbd><kbd>6</kbd><kbd>7</kbd>
+  </p>
+  <p>移调八度 <kbd>[</kbd> <kbd>]</kbd> &nbsp;·&nbsp; 当前：<span id="octLabel">C4 – B5</span></p>
+  <p>手机上点右上角「横屏」· 鼠标点击琴键（靠前力度大）· 拖拽旋转 · 滚轮缩放</p>
+</div>
+
+<div id="note"></div>
+<div id="velbar"><div id="velfill"></div></div>
+<canvas id="c"></canvas>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+/* =========================================================
+   0. 工具函数（必须最先定义）
+   ========================================================= */
+const NOTE_NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+const BLACK_PCS  = new Set([1, 3, 6, 8, 10]);
+
+const isBlackMidi = (m) => BLACK_PCS.has(m % 12);
+const noteName = (midi) =>
+  NOTE_NAMES[midi % 12] + (Math.floor(midi / 12) - 1);
+
+const clamp = THREE.MathUtils.clamp;
+
+/* =========================================================
+   1. 渲染器 / 场景 / 相机
+   ========================================================= */
+const canvas = document.getElementById('c');
+
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.12;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x07090c);
+scene.fog = new THREE.FogExp2(0x07090c, 0.011);
+
+const camera = new THREE.PerspectiveCamera(42, window.innerWidth / window.innerHeight, 0.2, 400);
+
+const controls = new OrbitControls(camera, canvas);
+controls.target.set(0, 1.5, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.075;
+controls.minDistance = 6;
+controls.maxDistance = 110;
+controls.maxPolarAngle = Math.PI * 0.49;
+controls.zoomSpeed = 0.9;
+
+let userMovedCamera = false;
+controls.addEventListener('start', () => { userMovedCamera = true; });
+
+/* =========================================================
+   2. 灯光
+   ========================================================= */
+scene.add(new THREE.HemisphereLight(0x9db8ff, 0x0a0c11, 0.8));
+
+const keyLight = new THREE.DirectionalLight(0xffffff, 2.3);
+keyLight.position.set(14, 28, 20);
+keyLight.castShadow = true;
+keyLight.shadow.mapSize.set(2048, 2048);
+keyLight.shadow.camera.left   = -20;
+keyLight.shadow.camera.right  =  20;
+keyLight.shadow.camera.top    =  20;
+keyLight.shadow.camera.bottom = -20;
+keyLight.shadow.camera.near   =  1;
+keyLight.shadow.camera.far    =  80;
+keyLight.shadow.bias = -0.0006;
+keyLight.shadow.normalBias = 0.03;
+scene.add(keyLight);
+
+const rimLight = new THREE.DirectionalLight(0x4d7dff, 1.4);
+rimLight.position.set(-16, 10, -14);
+scene.add(rimLight);
+
+const fillLight = new THREE.PointLight(0x66ccff, 30, 60, 2);
+fillLight.position.set(0, 9, 16);
+scene.add(fillLight);
+
+/* =========================================================
+   3. 键盘几何参数（88 键，A0 – C8）
+   ========================================================= */
+const MIDI_LOW  = 21;
+const MIDI_HIGH = 108;
+
+const WHITE_W   = 0.55;
+const WHITE_GAP = 0.028;
+const WHITE_H   = 0.42;
+const WHITE_LEN = 3.20;
+
+const BLACK_W   = WHITE_W * 0.58;
+const BLACK_H   = 0.38;
+const BLACK_LEN = WHITE_LEN * 0.62;
+
+const KEY_BASE_Y = 1.20;
+const KEY_BACK_Z = -1.60;
+const PIVOT_Z    = KEY_BACK_Z + 0.06;
+const WHITE_TOP  = KEY_BASE_Y + WHITE_H;
+const BLACK_BASE = WHITE_TOP + 0.004;
+const BLACK_TOP  = BLACK_BASE + BLACK_H;
+
+const PRESS_ANGLE = 0.092;
+
+// 白键序号
+const whiteIndexByMidi = new Map();
+{
+  let i = 0;
+  for (let m = MIDI_LOW; m <= MIDI_HIGH; m++) {
+    if (!isBlackMidi(m)) { whiteIndexByMidi.set(m, i); i++; }
+  }
+}
+const WHITE_COUNT = whiteIndexByMidi.size;      // 52
+const TOTAL_W     = WHITE_COUNT * WHITE_W;      // ≈28.6
+const START_X     = -(WHITE_COUNT - 1) / 2 * WHITE_W;
+
+/* =========================================================
+   4. 地面 & 琴身
+   ========================================================= */
+const floor = new THREE.Mesh(
+  new THREE.PlaneGeometry(200, 200),
+  new THREE.MeshStandardMaterial({ color: 0x10141a, roughness: 0.85, metalness: 0.15 })
+);
+floor.rotation.x = -Math.PI / 2;
+floor.position.y = -0.01;
+floor.receiveShadow = true;
+scene.add(floor);
+
+const body = new THREE.Mesh(
+  new THREE.BoxGeometry(TOTAL_W + 1.8, KEY_BASE_Y, 3.2),
+  new THREE.MeshStandardMaterial({ color: 0x161a22, roughness: 0.40, metalness: 0.60 })
+);
+body.position.set(0, KEY_BASE_Y / 2, KEY_BACK_Z - 1.6);
+body.castShadow = true;
+body.receiveShadow = true;
+scene.add(body);
+
+const shelf = new THREE.Mesh(
+  new THREE.BoxGeometry(TOTAL_W + 1.2, 0.14, WHITE_LEN + 0.6),
+  new THREE.MeshStandardMaterial({ color: 0x0d1117, roughness: 0.6, metalness: 0.35 })
+);
+shelf.position.set(0, KEY_BASE_Y - 0.07, KEY_BACK_Z + WHITE_LEN / 2);
+shelf.receiveShadow = true;
+scene.add(shelf);
+
+const strip = new THREE.Mesh(
+  new THREE.BoxGeometry(TOTAL_W + 1.4, 0.07, 0.45),
+  new THREE.MeshStandardMaterial({
+    color: 0x0e1218, emissive: 0x2a6cff, emissiveIntensity: 1.5,
+    roughness: 0.3, metalness: 0.7
+  })
+);
+strip.position.set(0, KEY_BASE_Y + 0.02, KEY_BACK_Z - 1.55);
+scene.add(strip);
+
+/* =========================================================
+   5. 创建 88 个琴键
+   ========================================================= */
+const keys = [];
+const keysByMidi = new Map();
+const pickMeshes = [];
+
+const whiteGeo = new THREE.BoxGeometry(WHITE_W - WHITE_GAP, WHITE_H, WHITE_LEN);
+const blackGeo = new THREE.BoxGeometry(BLACK_W, BLACK_H, BLACK_LEN);
+
+const whiteBaseMat = new THREE.MeshStandardMaterial({
+  color: 0xf7f7f4, roughness: 0.30, metalness: 0.03,
+  emissive: 0x5fb8ff, emissiveIntensity: 0
+});
+const blackBaseMat = new THREE.MeshStandardMaterial({
+  color: 0x13151a, roughness: 0.24, metalness: 0.30,
+  emissive: 0x3aa0ff, emissiveIntensity: 0
+});
+
+function createKey(midi, x, black) {
+  const h    = black ? BLACK_H   : WHITE_H;
+  const len  = black ? BLACK_LEN : WHITE_LEN;
+  const topY = black ? BLACK_TOP : WHITE_TOP;
+
+  const pivot = new THREE.Group();
+  pivot.position.set(x, topY, PIVOT_Z);
+
+  const mat = (black ? blackBaseMat : whiteBaseMat).clone();
+  const mesh = new THREE.Mesh(black ? blackGeo : whiteGeo, mat);
+
+  const centerZ = KEY_BACK_Z + len / 2;
+  mesh.position.set(0, -h / 2, centerZ - PIVOT_Z);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+
+  pivot.add(mesh);
+  scene.add(pivot);
+
+  const key = {
+    midi, x, black, pivot, mesh,
+    name: noteName(midi),
+    pressed: false,
+    angle: 0,
+    angVel: 0,
+    pressDepth: 1
+  };
+
+  mesh.userData.key = key;
+
+  keys.push(key);
+  keysByMidi.set(midi, key);
+  pickMeshes.push(mesh);
+}
+
+// 白键
+for (let m = MIDI_LOW; m <= MIDI_HIGH; m++) {
+  if (!isBlackMidi(m)) {
+    const i = whiteIndexByMidi.get(m);
+    createKey(m, START_X + i * WHITE_W, false);
+  }
+}
+
+// 黑键（真实偏置）
+const BLACK_OFFSET = { 1: 1.09, 3: 1.09, 6: 1.10, 8: 1.10, 10: 1.09 };
+for (let m = MIDI_LOW; m <= MIDI_HIGH; m++) {
+  if (!isBlackMidi(m)) continue;
+  const lowerWhiteIdx = whiteIndexByMidi.get(m - 1);
+  const off = BLACK_OFFSET[m % 12];
+  createKey(m, START_X + (lowerWhiteIdx - 0.5 + off) * WHITE_W, true);
+}
+
+/* =========================================================
+   6. 相机自适应
+   ========================================================= */
+function fitCameraToKeyboard() {
+  const aspect = window.innerWidth / window.innerHeight;
+  const vFov = THREE.MathUtils.degToRad(camera.fov);
+  const needW = TOTAL_W + 2.2;
+  const distH = (needW / 2) / (Math.tan(vFov / 2) * Math.max(aspect, 0.25));
+  const dist = clamp(distH * 1.22, 18, 95);
+
+  camera.position.set(0, dist * 0.56, dist * 0.90);
+  controls.target.set(0, 1.5, 0);
+  controls.update();
+}
+fitCameraToKeyboard();
+
+/* =========================================================
+   7. 音频引擎
+   ========================================================= */
+let audioCtx = null;
+let masterGain = null;
+let activeVoices = 0;
+const MAX_VOICES = 48;
+
+const PARTIALS = [
+  { r: 1,  g: 1.00, d: 1.00 },
+  { r: 2,  g: 0.46, d: 0.66 },
+  { r: 3,  g: 0.24, d: 0.47 },
+  { r: 4,  g: 0.14, d: 0.34 },
+  { r: 5,  g: 0.085, d: 0.26 },
+  { r: 6,  g: 0.055, d: 0.20 },
+  { r: 8,  g: 0.030, d: 0.15 },
+  { r: 11, g: 0.016, d: 0.11 }
+];
+
+function makeImpulseResponse(seconds, decay) {
+  const rate = audioCtx.sampleRate;
+  const len = Math.floor(rate * seconds);
+  const buf = audioCtx.createBuffer(2, len, rate);
+  for (let ch = 0; ch < 2; ch++) {
+    const d = buf.getChannelData(ch);
+    for (let i = 0; i < len; i++) {
+      d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, decay);
+    }
+  }
+  return buf;
+}
+
+function ensureAudio() {
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+    const compressor = audioCtx.createDynamicsCompressor();
+    compressor.threshold.value = -18;
+    compressor.knee.value = 26;
+    compressor.ratio.value = 5;
+    compressor.attack.value = 0.003;
+    compressor.release.value = 0.28;
+    compressor.connect(audioCtx.destination);
+
+    masterGain = audioCtx.createGain();
+    masterGain.gain.value = 0.92;
+
+    const convolver = audioCtx.createConvolver();
+    convolver.buffer = makeImpulseResponse(2.0, 2.3);
+    const wet = audioCtx.createGain();
+    wet.gain.value = 0.26;
+
+    masterGain.connect(compressor);
+    masterGain.connect(convolver);
+    convolver.connect(wet);
+    wet.connect(compressor);
+  }
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+}
+
+function playNote(midi, velocity = 0.85) {
+  ensureAudio();
+  if (activeVoices >= MAX_VOICES) return;
+
+  const ctx = audioCtx;
+  const t = ctx.currentTime + 0.001;
+
+  const v = clamp(velocity, 0.15, 1);
+  const freq = 440 * Math.pow(2, (midi - 69) / 12);
+
+  const baseDur = 4.8 * Math.pow(0.5, (midi - MIDI_LOW) / 26);
+  const amp       = 0.045 + 0.175 * v;
+  const bright    = 0.25 + 0.75 * v;
+  const attackMul = 1.35 - 0.85 * v;
+
+  const bus = ctx.createGain();
+  bus.gain.value = amp;
+  bus.connect(masterGain);
+
+  const maxRatio = midi > 96 ? 4 : midi > 84 ? 6 : 11;
+
+  for (const p of PARTIALS) {
+    if (p.r > maxRatio) continue;
+
+    const osc = ctx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.value = freq * p.r;
+    osc.detune.value = (Math.random() - 0.5) * 5.5;
+
+    const g = ctx.createGain();
+    const dur    = Math.max(0.09, baseDur * p.d);
+    const attack = (0.0035 + 0.011 / p.r) * attackMul;
+    const peak   = p.g * (p.r === 1 ? 1 : bright);
+
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(Math.max(0.0004, peak), t + attack);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+
+    osc.connect(g);
+    g.connect(bus);
+
+    osc.start(t);
+    osc.stop(t + dur + 0.06);
+  }
+
+  activeVoices++;
+  setTimeout(() => { activeVoices = Math.max(0, activeVoices - 1); },
+             Math.min(5000, (baseDur + 0.5) * 1000));
+}
+
+/* =========================================================
+   8. 按下 / 松开
+   ========================================================= */
+const noteEl  = document.getElementById('note');
+const velBar  = document.getElementById('velbar');
+const velFill = document.getElementById('velfill');
+let noteTimer = null, velTimer = null;
+
+function flashNote(name, velocity) {
+  noteEl.textContent = name;
+  noteEl.classList.add('show');
+  clearTimeout(noteTimer);
+  noteTimer = setTimeout(() => noteEl.classList.remove('show'), 460);
+
+  velBar.classList.add('show');
+  velFill.style.width = Math.round(velocity * 100) + '%';
+  clearTimeout(velTimer);
+  velTimer = setTimeout(() => velBar.classList.remove('show'), 420);
+}
+
+function pressKey(key, velocity = 0.85) {
+  if (!key || key.pressed) return;
+  key.pressed = true;
+  key.pressDepth = 0.82 + 0.28 * velocity;
+  playNote(key.midi, velocity);
+  flashNote(key.name, velocity);
+}
+
+function releaseKey(key) {
+  if (!key) return;
+  key.pressed = false;
+}
+
+/* =========================================================
+   9. 鼠标 / 触摸：拾取 + 力度 + 滑动连奏
+   ========================================================= */
+const raycaster = new THREE.Raycaster();
+const ndc = new THREE.Vector2();
+
+function pickKey(clientX, clientY) {
+  ndc.x = (clientX / window.innerWidth) * 2 - 1;
+  ndc.y = -(clientY / window.innerHeight) * 2 + 1;
+  raycaster.setFromCamera(ndc, camera);
+  const hits = raycaster.intersectObjects(pickMeshes, false);
+  if (!hits.length) return null;
+
+  const hit = hits[0];
+  const key = hit.object.userData.key;
+
+  const len = key.black ? BLACK_LEN : WHITE_LEN;
+  const t = clamp((hit.point.z - KEY_BACK_Z) / len, 0, 1);
+  const velocity = clamp(0.48 + 0.58 * Math.pow(t, 0.7), 0.48, 1);
+
+  return { key, velocity };
+}
+
+let pointerKey = null;
+let pointerPlaying = false;
+
+canvas.addEventListener('pointerdown', (e) => {
+  if (pointerPlaying) return;          // 多指触摸时让 OrbitControls 处理
+
+  const hit = pickKey(e.clientX, e.clientY);
+  if (!hit) return;
+
+  e.stopImmediatePropagation();
+  e.preventDefault();
+
+  pointerPlaying = true;
+  pointerKey = hit.key;
+  pressKey(hit.key, hit.velocity);
+}, true);
+
+window.addEventListener('pointermove', (e) => {
+  if (!pointerPlaying) return;
+  const hit = pickKey(e.clientX, e.clientY);
+  const k = hit ? hit.key : null;
+
+  if (k !== pointerKey) {
+    if (pointerKey) releaseKey(pointerKey);
+    if (k) pressKey(k, hit.velocity);
+    pointerKey = k;
+  }
+}, { passive: true });
+
+function endPointer() {
+  if (pointerKey) releaseKey(pointerKey);
+  pointerKey = null;
+  pointerPlaying = false;
+}
+window.addEventListener('pointerup', endPointer);
+window.addEventListener('pointercancel', endPointer);
+
+/* =========================================================
+   10. 电脑键盘映射（可移调）
+   ========================================================= */
+const BASE_KEY_MAP = {
+  'z': 60, 's': 61, 'x': 62, 'd': 63, 'c': 64, 'v': 65, 'g': 66,
+  'b': 67, 'h': 68, 'n': 69, 'j': 70, 'm': 71,
+  'q': 72, '2': 73, 'w': 74, '3': 75, 'e': 76, 'r': 77, '5': 78,
+  't': 79, '6': 80, 'y': 81, '7': 82, 'u': 83
+};
+
+let octaveShift = 0;
+const OCT_LABEL = document.getElementById('octLabel');
+
+function updateOctaveLabel() {
+  const lowMidi  = 60 + octaveShift * 12;
+  const highMidi = 83 + octaveShift * 12;
+  OCT_LABEL.textContent = `${noteName(lowMidi)} – ${noteName(highMidi)}`;
+}
+updateOctaveLabel();
+
+window.addEventListener('keydown', (e) => {
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+
+  if (e.key === '[') {
+    octaveShift = Math.max(-3, octaveShift - 1);
+    updateOctaveLabel(); e.preventDefault(); return;
+  }
+  if (e.key === ']') {
+    octaveShift = Math.min(2, octaveShift + 1);
+    updateOctaveLabel(); e.preventDefault(); return;
+  }
+
+  if (e.repeat) return;
+  const base = BASE_KEY_MAP[e.key.toLowerCase()];
+  if (base === undefined) return;
+
+  const key = keysByMidi.get(base + octaveShift * 12);
+  if (!key) return;
+
+  e.preventDefault();
+  pressKey(key, 0.86);
+});
+
+window.addEventListener('keyup', (e) => {
+  const base = BASE_KEY_MAP[e.key.toLowerCase()];
+  if (base === undefined) return;
+  releaseKey(keysByMidi.get(base + octaveShift * 12));
+});
+
+window.addEventListener('blur', () => {
+  keys.forEach(k => (k.pressed = false));
+  endPointer();
+});
+
+/* =========================================================
+   11. 一键横屏
+   ========================================================= */
+const fsBtn      = document.getElementById('fsBtn');
+const fsIcon     = document.getElementById('fsIcon');
+const fsText     = document.getElementById('fsText');
+const rotateHint = document.getElementById('rotateHint');
+
+const isTouchDevice =
+  ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+
+let landscapeMode = false;   // 是否处于「横屏模式」
+
+// 桌面端隐藏按钮
+if (!isTouchDevice) fsBtn.classList.add('hidden');
+
+const isLandscape = () => window.innerWidth > window.innerHeight;
+
+function updateFsBtn() {
+  if (landscapeMode) {
+    fsIcon.textContent = '↺';
+    fsText.textContent = '退出横屏';
+  } else {
+    fsIcon.textContent = '⤢';
+    fsText.textContent = '横屏';
+  }
+}
+
+let hintTimer = null;
+function showRotateHint() {
+  rotateHint.classList.add('show');
+  clearTimeout(hintTimer);
+  hintTimer = setTimeout(hideRotateHint, 4200);
+}
+function hideRotateHint() {
+  rotateHint.classList.remove('show');
+  clearTimeout(hintTimer);
+}
+rotateHint.addEventListener('pointerdown', hideRotateHint);
+
+/** 全屏 + 方向锁定，然后重新适配相机 */
+function refitCameraAfterRotate(delay = 280) {
+  setTimeout(() => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    fitCameraToKeyboard();
+    userMovedCamera = false;
+  }, delay);
+}
+
+async function enterLandscape() {
+  const el = document.documentElement;
+
+  // 1) 进入全屏（iOS iPhone Safari 不支持，会抛错，忽略即可）
+  try {
+    if (el.requestFullscreen) {
+      await el.requestFullscreen({ navigationUI: 'hide' });
+    } else if (el.webkitRequestFullscreen) {
+      el.webkitRequestFullscreen();
+    }
+  } catch (err) { /* 忽略 */ }
+
+  // 2) 锁定横屏方向
+  let locked = false;
+  try {
+    if (screen.orientation && typeof screen.orientation.lock === 'function') {
+      await screen.orientation.lock('landscape');
+      locked = true;
+    } else if (typeof screen.lockOrientation === 'function') {
+      screen.lockOrientation('landscape');
+      locked = true;
+    }
+  } catch (err) { locked = false; }
+
+  landscapeMode = true;
+  updateFsBtn();
+  refitCameraAfterRotate();
+
+  // 3) 锁定失败且当前仍是竖屏 → 提示用户手动旋转
+  if (!locked && !isLandscape()) showRotateHint();
+}
+
+async function exitLandscape() {
+  try {
+    if (screen.orientation && typeof screen.orientation.unlock === 'function') {
+      screen.orientation.unlock();
+    } else if (typeof screen.unlockOrientation === 'function') {
+      screen.unlockOrientation();
+    }
+  } catch (err) { /* 忽略 */ }
+
+  try {
+    if (document.fullscreenElement) {
+      await document.exitFullscreen();
+    } else if (document.webkitFullscreenElement) {
+      document.webkitExitFullscreen();
+    }
+  } catch (err) { /* 忽略 */ }
+
+  landscapeMode = false;
+  updateFsBtn();
+  hideRotateHint();
+  refitCameraAfterRotate();
+}
+
+fsBtn.addEventListener('click', () => {
+  if (landscapeMode) exitLandscape();
+  else enterLandscape();
+});
+
+// 用户用系统手势 / Esc 退出全屏时同步状态
+function syncFullscreenState() {
+  const fsEl = document.fullscreenElement || document.webkitFullscreenElement;
+  if (!fsEl && landscapeMode) {
+    landscapeMode = false;
+    updateFsBtn();
+    try {
+      if (screen.orientation && screen.orientation.unlock) screen.orientation.unlock();
+    } catch (err) { /* 忽略 */ }
+  }
+}
+document.addEventListener('fullscreenchange', syncFullscreenState);
+document.addEventListener('webkitfullscreenchange', syncFullscreenState);
+
+// 设备方向变化时：横过来了就收起提示
+if (screen.orientation && screen.orientation.addEventListener) {
+  screen.orientation.addEventListener('change', () => {
+    if (isLandscape()) hideRotateHint();
+    refitCameraAfterRotate(200);
+  });
+}
+window.addEventListener('orientationchange', () => {
+  setTimeout(() => {
+    if (isLandscape()) hideRotateHint();
+    refitCameraAfterRotate(60);
+  }, 320);
+});
+
+/* =========================================================
+   12. 动画循环（重锤弹簧物理）
+   ========================================================= */
+const clock = new THREE.Clock();
+const SUBSTEPS = 4;
+
+function animate() {
+  requestAnimationFrame(animate);
+
+  const dt = Math.min(clock.getDelta(), 0.05);
+  const h = dt / SUBSTEPS;
+
+  for (const k of keys) {
+    const target  = k.pressed ? PRESS_ANGLE * k.pressDepth : 0;
+    const stiff   = k.pressed ? 1500 : 700;
+    const damping = k.pressed ? 58 : 34;
+
+    for (let s = 0; s < SUBSTEPS; s++) {
+      const acc = (target - k.angle) * stiff - k.angVel * damping;
+      k.angVel += acc * h;
+      k.angle  += k.angVel * h;
+
+      if (k.angle > target + 0.018) { k.angle = target + 0.018; if (k.angVel > 0) k.angVel = 0; }
+      if (k.angle < -0.007)         { k.angle = -0.007;         if (k.angVel < 0) k.angVel = 0; }
+    }
+
+    k.pivot.rotation.x = k.angle;
+
+    const g = clamp(k.angle / PRESS_ANGLE, 0, 1);
+    k.mesh.material.emissiveIntensity = g * (k.black ? 1.35 : 0.62);
+  }
+
+  const t = clock.elapsedTime;
+  fillLight.intensity = 26 + Math.sin(t * 1.3) * 5;
+  strip.material.emissiveIntensity = 1.35 + Math.sin(t * 1.9) * 0.3;
+
+  controls.update();
+  renderer.render(scene, camera);
+}
+
+const loadingEl = document.getElementById('loading');
+if (loadingEl) {
+  loadingEl.style.opacity = '0';
+  setTimeout(() => loadingEl.remove(), 450);
+}
+
+animate();
+
+/* =========================================================
+   13. 窗口尺寸变化
+   ========================================================= */
+let resizeTimer = null;
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => {
+    if (!userMovedCamera) fitCameraToKeyboard();
+    if (isLandscape()) hideRotateHint();
+  }, 180);
+});
+</script>
+</body>
+</html>

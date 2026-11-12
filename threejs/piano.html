@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8" />
-<!-- 移动端视口：禁止用户缩放，适配刘海屏 -->
+<!-- 移动端视口：禁止缩放，适配刘海屏 -->
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
 <!-- 允许 iOS 添加到主屏后全屏运行 -->
 <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -16,7 +16,7 @@
     /* 禁止长按选中文字，避免触屏弹菜单 */
     -webkit-user-select: none; user-select: none;
   }
-  /* touch-action: none 阻止浏览器默认触摸手势（滚动、缩放），全部交给 JS 处理 */
+  /* touch-action: none 阻止浏览器默认触摸手势（滚动、缩放），全部交给 JS */
   canvas { display: block; touch-action: none; }
 
   /* ---------- 左上角操作提示 ---------- */
@@ -253,7 +253,7 @@
     &nbsp;·&nbsp; 左右移动 <kbd>←</kbd> <kbd>→</kbd> 或左下角按钮
     &nbsp;·&nbsp; 当前：<span id="octLabel">C4 – B5</span>
   </p>
-  <p>点击琴键（靠前力度大）· 关闭「拖拽」后单指在琴身滑动可平移 · 双指缩放</p>
+  <p>点击琴键（靠前力度大）· 多指可弹和弦 · 关闭「拖拽」后视角稳定</p>
 </div>
 
 <!-- 音名 / 力度反馈 -->
@@ -267,10 +267,12 @@
 /* =====================================================================
    模块 0：动态加载 Three.js（多 CDN 自动回退）
    ---------------------------------------------------------------------
-   设计要点：
-   - 不使用 ES module / importmap，改用 UMD 全局脚本，file:// 下也能运行
-   - 依次尝试 jsDelivr → Zstatic → unpkg，任一成功即启动
-   - 全部失败时在加载层给出明确提示，而不是静默卡住
+   设计决策：
+   1. 不使用 ES module / importmap，改用 UMD 全局脚本。
+      原因：file:// 协议下 ES module 会被 CORS 拦截，importmap 也可能解析失败。
+      UMD 版本用普通 <script> 加载，兼容性最好。
+   2. 依次尝试 jsDelivr → Zstatic → unpkg，任一成功即启动。
+   3. 全部失败时在加载层给出可操作的排查提示，而非静默卡住。
    ===================================================================== */
 (function loadThree() {
   var mainEl = document.getElementById('loadingMain');
@@ -298,9 +300,9 @@
     s.src = urls[i++];
     s.onload = function () {
       if (typeof THREE !== 'undefined') {
-        try {
-          startPiano();  // 启动主程序
-        } catch (err) {
+        // Three.js 已就绪，启动主程序
+        try { startPiano(); }
+        catch (err) {
           // 初始化异常显示在加载层，便于排查
           mainEl.textContent = "初始化失败";
           tipsEl.textContent = err.message;
@@ -320,14 +322,15 @@
    主程序：startPiano()
    ---------------------------------------------------------------------
    整体结构：
+     §0  工具函数
      §1  渲染器 / 场景 / 相机
      §2  灯光
      §3  键盘几何参数
      §4  地面与琴身
      §5  创建 88 个琴键
      §6  自定义相机控制器
-     §7  手势处理（旋转 / 缩放 / 平移 / 弹琴）
-     §8  音频引擎（泛音合成 + 混响）
+     §7  手势处理（多指弹奏 + 相机手势）
+     §8  音频引擎（多 voice 混音）
      §9  按下 / 松开
      §10 延音踏板
      §11 拖拽开关
@@ -375,10 +378,11 @@ function startPiano() {
   renderer.toneMappingExposure = 1.12;                // 曝光，偏暗可降至 0.95
   if ('outputEncoding' in renderer) renderer.outputEncoding = THREE.sRGBEncoding;
 
-  // 关键：统一光照强度语义
-  // r149 及更早默认 legacy 光照，PointLight 强度是相对值，会过曝发白
-  // r155+ 默认物理光照，强度按坎德拉计算
-  // 这里强制开启物理光照，保证不同版本视觉一致
+  // —— 关键：统一光照强度语义 ——
+  // r149 及更早默认 legacy 光照模式，PointLight 的 intensity 是相对值，
+  // 代码里的 30 会被放大使用，导致整个场景过曝发白。
+  // r155+ 默认改用物理光照，强度按坎德拉计算，同一数值的视觉效果小很多。
+  // 这里强制开启物理光照，保证不同版本视觉一致。
   if ('physicallyCorrectLights' in renderer) {
     renderer.physicallyCorrectLights = true;
   } else if ('useLegacyLights' in renderer) {
@@ -417,8 +421,8 @@ function startPiano() {
   keyLight.shadow.camera.bottom = -20;
   keyLight.shadow.camera.near   =  1;
   keyLight.shadow.camera.far    =  80;
-  keyLight.shadow.bias = -0.0006;       // 消除阴影条纹
-  keyLight.shadow.normalBias = 0.03;    // 消除自阴影粉刺
+  keyLight.shadow.bias = -0.0006;     // 消除阴影条纹
+  keyLight.shadow.normalBias = 0.03;  // 消除自阴影粉刺
   scene.add(keyLight);
 
   var rimLight = new THREE.DirectionalLight(0x4d7dff, 1.4);
@@ -451,11 +455,11 @@ function startPiano() {
   var BLACK_H   = 0.38;             // 黑键厚度
   var BLACK_LEN = WHITE_LEN * 0.62; // 黑键长度 ≈ 2.0
 
-  var KEY_BASE_Y = 1.20;                    // 白键底面高度
-  var KEY_BACK_Z = -1.60;                   // 琴键后边缘 Z
-  var PIVOT_Z    = KEY_BACK_Z + 0.06;       // 旋转支点 Z（略靠前于后缘）
-  var WHITE_TOP  = KEY_BASE_Y + WHITE_H;    // 白键顶面 Y
-  var BLACK_BASE = WHITE_TOP + 0.004;       // 黑键底面（略微抬升避免 Z-fighting）
+  var KEY_BASE_Y = 1.20;                 // 白键底面高度
+  var KEY_BACK_Z = -1.60;                // 琴键后边缘 Z
+  var PIVOT_Z    = KEY_BACK_Z + 0.06;    // 旋转支点 Z（略靠前于后缘）
+  var WHITE_TOP  = KEY_BASE_Y + WHITE_H; // 白键顶面 Y
+  var BLACK_BASE = WHITE_TOP + 0.004;    // 黑键底面（略微抬升避免 Z-fighting）
   var BLACK_TOP  = BLACK_BASE + BLACK_H;
 
   var PRESS_ANGLE = 0.092; // 满力度按下时的旋转弧度（约 5.3°）
@@ -468,8 +472,8 @@ function startPiano() {
       if (!isBlackMidi(m)) { whiteIndexByMidi.set(m, i); i++; }
     }
   })();
-  var WHITE_COUNT = whiteIndexByMidi.size;           // 52
-  var TOTAL_W     = WHITE_COUNT * WHITE_W;           // 键盘总宽 ≈ 28.6
+  var WHITE_COUNT = whiteIndexByMidi.size;            // 52
+  var TOTAL_W     = WHITE_COUNT * WHITE_W;            // 键盘总宽 ≈ 28.6
   var START_X     = -(WHITE_COUNT - 1) / 2 * WHITE_W; // 第一个白键 X，居中排布
 
   /* ===================================================================
@@ -522,9 +526,9 @@ function startPiano() {
      子 Mesh 在 pivot 局部坐标中向下、向前偏移，
      这样 rotation.x 旋转时看起来像真实琴键绕支点转动。
      =================================================================== */
-  var keys = [];                 // 全部琴键对象
-  var keysByMidi = new Map();    // MIDI → 琴键对象
-  var pickMeshes = [];           // 参与射线拾取的 Mesh 列表
+  var keys = [];               // 全部琴键对象
+  var keysByMidi = new Map();  // MIDI → 琴键对象
+  var pickMeshes = [];         // 参与射线拾取的 Mesh 列表
 
   // 几何体复用，88 个键共享，节省显存
   var whiteGeo = new THREE.BoxGeometry(WHITE_W - WHITE_GAP, WHITE_H, WHITE_LEN);
@@ -542,8 +546,8 @@ function startPiano() {
 
   /**
    * 创建一个琴键
-   * @param {number} midi  MIDI 音高
-   * @param {number} x     琴键中心 X
+   * @param {number}  midi  MIDI 音高
+   * @param {number}  x     琴键中心 X
    * @param {boolean} black 是否黑键
    */
   function createKey(midi, x, black) {
@@ -625,13 +629,13 @@ function startPiano() {
     targetGoal: new THREE.Vector3(0, 1.5, 0)
   };
 
-  var PHI_MIN   = 0.12;               // 俯仰下限（防止穿到地面以下）
-  var PHI_MAX   = Math.PI * 0.47;     // 俯仰上限（略低于水平）
-  var DIST_MIN  = 6;                  // 最近距离
-  var DIST_MAX  = 110;                // 最远距离
-  var PAN_LIMIT = TOTAL_W * 0.85;     // 左右平移最大 X 范围
+  var PHI_MIN   = 0.12;              // 俯仰下限（防止穿到地面以下）
+  var PHI_MAX   = Math.PI * 0.47;    // 俯仰上限（略低于水平）
+  var DIST_MIN  = 6;                 // 最近距离
+  var DIST_MAX  = 110;               // 最远距离
+  var PAN_LIMIT = TOTAL_W * 0.85;    // 左右平移最大 X 范围
 
-  var userMovedCamera = false; // 用户是否手动调过视角（用于窗口 resize 时是否自动重适配）
+  var userMovedCamera = false; // 用户是否手动调过视角（决定 resize 时是否自动重适配）
   var dragEnabled = true;      // 拖拽开关状态
 
   /** 根据 camState 计算相机位置并 lookAt */
@@ -667,22 +671,33 @@ function startPiano() {
   fitCameraToKeyboard();
 
   /* ===================================================================
-     §7 手势处理
+     §7 手势处理（触摸 / 鼠标分离，多指可靠）
      -------------------------------------------------------------------
-     两类指针分离：
-       pianoPointers   —— 落在琴键上的指针，负责弹奏
-       gesturePointers —— 落在空白区的指针，负责相机手势
-     这样多指和弦与相机操作互不干扰。
+     【重要设计】触摸屏为什么用 touch events 而不是 pointer events？
+       pointer events 理论上支持多指，但在 iOS Safari 和部分 Android WebView 上，
+       多指同时按下时 pointerdown 行为不可靠——常常只有第一根手指能正确注册，
+       后续手指被静默吞掉或串到手势分支，导致按多个键只响一个音。
+       touch events 的 e.changedTouches 天然给出每一根独立手指，
+       配合 touch.identifier 可以稳定追踪多指，绝不遗漏。
 
-     手势优先级：
-       1 指 → 拖拽开：旋转 / 拖拽关：平移
-       2 指 → 捏合缩放 + 双指平移
+     【统一 ID 方案】两类输入统一映射为字符串 ID：
+       触摸     → 't' + touch.identifier
+       鼠标 / 笔 → 'p' + pointerId
+
+     【两类指针分离】
+       pianoPointers   —— 当前负责弹奏的指针（值为 key 或 null）
+       gesturePointers —— 当前负责相机手势的指针（值为 {x, y}）
+     这样多指和弦与相机操作互不干扰。
      =================================================================== */
-  var gesturePointers = new Map(); // pointerId → {x, y}
-  var pianoPointers   = new Map(); // pointerId → key
+  var pianoPointers   = new Map(); // id → key | null
+  var gesturePointers = new Map(); // id → {x, y}
   var gesture = null;              // 当前手势描述对象
 
-  /** 根据当前 gesturePointers 数量重建 gesture 描述 */
+  /**
+   * 根据当前 gesturePointers 数量重建 gesture 描述
+   * 1 指：拖拽开→旋转 / 拖拽关→平移
+   * 2 指：捏合缩放 + 双指平移
+   */
   function startGesture() {
     if (gesturePointers.size === 1) {
       var p = gesturePointers.values().next().value;
@@ -696,10 +711,7 @@ function startPiano() {
         };
       } else {
         // 拖拽关闭：单指空白区 → 平移（手机端辅助手段）
-        gesture = {
-          type: 'pan',
-          lastX: p.x, lastY: p.y
-        };
+        gesture = { type: 'pan', lastX: p.x, lastY: p.y };
       }
     } else if (gesturePointers.size === 2) {
       // 双指 → 捏合缩放 + 中点平移
@@ -783,66 +795,118 @@ function startPiano() {
     }
   }
 
-  /** 指针按下：优先判断是否落在琴键上 */
-  function onPointerDown(e) {
-    var hit = pickKey(e.clientX, e.clientY);
+  /* -----------------------------------------------------------------
+     统一的「指针按下」处理，id 可以是 't…' 或 'p…'
+     ----------------------------------------------------------------- */
+  function handlePointerDown(id, x, y) {
+    var hit = pickKey(x, y);
     if (hit) {
-      // 落在琴键上：阻止冒泡，避免触发相机手势
-      e.stopImmediatePropagation();
-      e.preventDefault();
-      pianoPointers.set(e.pointerId, hit.key);
+      // 落在琴键上 → 弹奏，不参与相机手势
+      pianoPointers.set(id, hit.key);
       pressKey(hit.key, hit.velocity);
-      return;
+    } else {
+      // 落在空白处 → 相机手势
+      gesturePointers.set(id, { x: x, y: y });
+      startGesture();
     }
-    // 落在空白处：加入相机手势
-    gesturePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    startGesture();
   }
 
-  /** 指针移动：区分弹琴滑动连奏 / 相机手势 */
-  function onPointerMove(e) {
-    // —— 弹琴指针：滑动连奏 ——
-    if (pianoPointers.has(e.pointerId)) {
-      var oldKey = pianoPointers.get(e.pointerId);
-      var hit = pickKey(e.clientX, e.clientY);
+  /* -----------------------------------------------------------------
+     统一的「指针移动」处理
+     【设计要点】手指从琴键滑出后，pianoPointers 保留该 id（值为 null），
+     而不是删除——这样手指滑回琴键时能立即恢复发声，
+     不会出现「滑出去一次之后这个手指就再也弹不响」的问题。
+     ----------------------------------------------------------------- */
+  function handlePointerMove(id, x, y) {
+    // 弹琴指针：滑动连奏
+    if (pianoPointers.has(id)) {
+      var oldKey = pianoPointers.get(id);
+      var hit = pickKey(x, y);
       var newKey = hit ? hit.key : null;
+
       if (newKey !== oldKey) {
         if (oldKey) releaseKey(oldKey);
-        if (newKey) {
-          pressKey(newKey, hit.velocity);
-          pianoPointers.set(e.pointerId, newKey);
-        } else {
-          pianoPointers.delete(e.pointerId);
-        }
+        if (newKey) pressKey(newKey, hit.velocity);
+        // 关键：即使是 null 也保留，允许后续滑回琴键
+        pianoPointers.set(id, newKey);
       }
       return;
     }
-    // —— 手势指针 ——
-    var gp = gesturePointers.get(e.pointerId);
+
+    // 手势指针：更新坐标并处理
+    var gp = gesturePointers.get(id);
     if (gp) {
-      gp.x = e.clientX;
-      gp.y = e.clientY;
+      gp.x = x;
+      gp.y = y;
       handleGestureMove();
     }
   }
 
-  /** 指针抬起：清理对应状态 */
-  function onPointerEnd(e) {
-    if (pianoPointers.has(e.pointerId)) {
-      releaseKey(pianoPointers.get(e.pointerId));
-      pianoPointers.delete(e.pointerId);
+  /* -----------------------------------------------------------------
+     统一的「指针抬起」处理
+     ----------------------------------------------------------------- */
+  function handlePointerEnd(id) {
+    if (pianoPointers.has(id)) {
+      var k = pianoPointers.get(id);
+      if (k) releaseKey(k);
+      pianoPointers.delete(id);
     }
-    if (gesturePointers.has(e.pointerId)) {
-      gesturePointers.delete(e.pointerId);
+    if (gesturePointers.has(id)) {
+      gesturePointers.delete(id);
       // 剩余指针重新构建手势（例如双指变单指）
       if (gesturePointers.size >= 1) startGesture();
       else gesture = null;
     }
   }
 
-  // 捕获阶段监听 pointerdown，确保先于其他监听器处理
-  canvas.addEventListener('pointerdown', onPointerDown, true);
-  window.addEventListener('pointermove', onPointerMove, { passive: true });
+  /* -----------------------------------------------------------------
+     7.1 触摸事件（多指可靠来源）
+     ----------------------------------------------------------------- */
+  canvas.addEventListener('touchstart', function (e) {
+    e.preventDefault();
+    // changedTouches 只包含本次新增/变化的手指，天然支持多指
+    for (var i = 0; i < e.changedTouches.length; i++) {
+      var t = e.changedTouches[i];
+      handlePointerDown('t' + t.identifier, t.clientX, t.clientY);
+    }
+  }, { passive: false });
+
+  canvas.addEventListener('touchmove', function (e) {
+    e.preventDefault();
+    for (var i = 0; i < e.changedTouches.length; i++) {
+      var t = e.changedTouches[i];
+      handlePointerMove('t' + t.identifier, t.clientX, t.clientY);
+    }
+  }, { passive: false });
+
+  function onTouchEnd(e) {
+    e.preventDefault();
+    for (var i = 0; i < e.changedTouches.length; i++) {
+      var t = e.changedTouches[i];
+      handlePointerEnd('t' + t.identifier);
+    }
+  }
+  canvas.addEventListener('touchend', onTouchEnd, { passive: false });
+  canvas.addEventListener('touchcancel', onTouchEnd, { passive: false });
+
+  /* -----------------------------------------------------------------
+     7.2 Pointer 事件（只处理鼠标和笔，触摸交给 touch events）
+     ----------------------------------------------------------------- */
+  canvas.addEventListener('pointerdown', function (e) {
+    if (e.pointerType === 'touch') return;   // 触摸已由 touch events 处理
+    e.preventDefault();
+    handlePointerDown('p' + e.pointerId, e.clientX, e.clientY);
+  }, true);
+
+  window.addEventListener('pointermove', function (e) {
+    if (e.pointerType === 'touch') return;
+    handlePointerMove('p' + e.pointerId, e.clientX, e.clientY);
+  }, { passive: true });
+
+  function onPointerEnd(e) {
+    if (e.pointerType === 'touch') return;
+    handlePointerEnd('p' + e.pointerId);
+  }
   window.addEventListener('pointerup', onPointerEnd);
   window.addEventListener('pointercancel', onPointerEnd);
 
@@ -855,12 +919,19 @@ function startPiano() {
   }, { passive: false });
 
   /* ===================================================================
-     §8 音频引擎
+     §8 音频引擎（多 voice 独立混音）
      -------------------------------------------------------------------
      用 Web Audio 合成钢琴音色，不使用采样文件：
        每个音符 = 8 个正弦波（基频 + 7 个泛音）
-       各泛音有独立的振幅和衰减时长，形成钢琴特有的"先亮后暗"音色
-       经 Convolver 混响后送入 DynamicsCompressor 压缩，最后输出
+       各泛音有独立振幅和衰减时长，形成钢琴特有的"先亮后暗"音色
+
+     【和弦混音原理】
+     每个按下的键创建一个独立 voice：
+       voice.bus → masterGain → compressor → destination
+                     ↘ convolver → wet → compressor
+     多个 voice 同时连接到同一个 masterGain，
+     Web Audio 会在内部自动求和，天然形成和弦混音，
+     无需手动管理每个音的音量平衡。
      =================================================================== */
   var audioCtx = null;
   var masterGain = null;
@@ -940,6 +1011,7 @@ function startPiano() {
 
   /**
    * 播放一个音符，返回 voice 对象
+   * 多个 voice 并行连接 masterGain，形成和弦
    * @param {number} midi     MIDI 音高
    * @param {number} velocity 力度 0~1（默认 0.85）
    */
@@ -963,7 +1035,7 @@ function startPiano() {
     var bright    = 0.25 + 0.75 * v;
     var attackMul = 1.35 - 0.85 * v; // 力度大时起音更快
 
-    // 每个 voice 的总线，便于统一快速淡出
+    // 每个 voice 独立总线 → masterGain，多个总线自动求和混音
     var bus = ctx.createGain();
     bus.gain.value = amp;
     bus.connect(masterGain);

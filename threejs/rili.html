@@ -2,38 +2,52 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
+  <!-- viewport-fit=cover：让内容延伸到 iPhone 刘海/底部横条区域
+       user-scalable=no：禁止浏览器级别的双击/双指缩放
+       因为我们自己在 canvas 上实现缩放，若不禁用浏览器手势，两者会打架 -->
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
   <title>Three.js 2D 万年历</title>
 
   <style>
+    /* ============================================================
+       主题变量（CSS 自定义属性）
+       —— 切换 body[data-theme] 即可整体换肤，不需要 JS 逐个改样式
+       —— 3D canvas 里的颜色无法用 CSS 变量，另有一份 JS 版主题表
+       ============================================================ */
     :root {
+      /* 整体背景 / 面板 / 文字 */
       --bg: #0f172a;
       --panel-bg: rgba(30, 41, 59, 0.92);
       --panel-border: rgba(148, 163, 184, 0.12);
       --text: #f1f5f9;
       --text-muted: #94a3b8;
+
+      /* 按钮三态（普通 / 悬停 / 按下） */
       --btn-bg: #334155;
       --btn-hover: #475569;
       --btn-active: #64748b;
+
       --divider: rgba(148, 163, 184, 0.25);
       --shadow: rgba(0, 0, 0, 0.5);
       --slider-track: #334155;
       --slider-fill: #3b82f6;
 
+      /* 日期详情浮层 */
       --detail-bg: rgba(15, 23, 42, 0.96);
       --detail-border: rgba(148, 163, 184, 0.25);
       --detail-text: #e2e8f0;
       --detail-title: #f1f5f9;
       --detail-divider: rgba(148, 163, 184, 0.15);
-      --detail-lunar: #fbbf24;
-      --detail-ganzhi: #94a3b8;
-      --detail-jieqi: #22d3ee;
-      --detail-festival: #f87171;
-      --detail-holiday: #4ade80;
-      --detail-work: #fb923c;
-      --detail-yi: #4ade80;
-      --detail-ji: #f87171;
+      --detail-lunar: #fbbf24;    /* 农历文字：金色 */
+      --detail-ganzhi: #94a3b8;   /* 干支：灰蓝 */
+      --detail-jieqi: #22d3ee;    /* 节气：青色 */
+      --detail-festival: #f87171; /* 节日：红色 */
+      --detail-holiday: #4ade80;  /* 放假：绿色 */
+      --detail-work: #fb923c;     /* 调休：橙色 */
+      --detail-yi: #4ade80;       /* 宜 */
+      --detail-ji: #f87171;       /* 忌 */
 
+      /* 加载 / 进度条 */
       --loading-bg: #0f172a;
       --spinner-track: #334155;
       --spinner-color: #3b82f6;
@@ -41,6 +55,9 @@
       --progress-fill: #3b82f6;
     }
 
+    /* 浅色主题：只覆盖颜色变量，结构完全相同
+       关键设计：节日/节气/周末红在浅色下要加深，
+       否则在白色卡片背景上对比度不够、看不清 */
     body[data-theme="light"] {
       --bg: #e2e8f0;
       --panel-bg: rgba(255, 255, 255, 0.94);
@@ -78,46 +95,63 @@
 
     html, body {
       margin: 0; height: 100%; overflow: hidden;
+      /* overscroll-behavior: none —— 阻止移动端"下拉刷新"和"触底回弹"
+         touch-action: none      —— 把所有触摸事件完全交给 JS 处理，
+                                    浏览器不做任何内置滚动/缩放 */
       overscroll-behavior: none; touch-action: none;
       background: var(--bg);
       color: var(--text);
       font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
       transition: background 0.25s ease;
     }
+    /* 100dvh = 动态视口高度，能正确避开 iOS Safari 地址栏
+       旧浏览器不支持 dvh 时，回退到前面声明的 100vh */
     #app { width: 100vw; height: 100vh; height: 100dvh; }
 
+    /* ---------------- 顶部控制栏（悬浮胶囊） ---------------- */
     #controls {
       position: fixed; top: 14px; left: 50%;
-      transform: translateX(-50%);
+      transform: translateX(-50%); /* 水平居中 */
       z-index: 10;
       display: flex; align-items: center; gap: 6px;
       background: var(--panel-bg);
+      /* backdrop-filter：毛玻璃效果，让面板半透明但背景模糊
+         -webkit- 前缀兼容 Safari */
       backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
-      padding: 8px 12px; border-radius: 999px;
+      padding: 8px 12px; border-radius: 999px; /* 999px = 全圆角胶囊 */
       color: var(--text); border: 1px solid var(--panel-border);
       box-shadow: 0 6px 24px var(--shadow);
-      user-select: none; max-width: calc(100vw - 24px);
+      user-select: none;
+      /* max-width + overflow-x:auto —— 窄屏时按钮横向可滚动，
+         不会因为空间不够被挤压变形 */
+      max-width: calc(100vw - 24px);
       overflow-x: auto; scrollbar-width: none;
       transition: background 0.25s ease, border-color 0.25s ease;
     }
+    /* 隐藏滚动条（Firefox 用 scrollbar-width，WebKit 用 ::-webkit-scrollbar） */
     #controls::-webkit-scrollbar { display: none; }
+
     #controls button {
       background: var(--btn-bg); border: none; color: var(--text);
       padding: 0 12px; height: 34px; min-width: 34px;
       border-radius: 999px; font-size: 16px; font-weight: 600;
       cursor: pointer; transition: background 0.15s, color 0.25s;
       display: flex; align-items: center; justify-content: center;
+      /* flex-shrink:0 —— 防止按钮在空间不足时被压扁 */
       flex-shrink: 0;
     }
     #controls button:hover { background: var(--btn-hover); }
     #controls button:active { background: var(--btn-active); }
+
     #yearLabel {
       font-size: 17px; font-weight: 700; min-width: 68px;
       text-align: center; letter-spacing: 0.5px; flex-shrink: 0;
     }
     #zoomLabel {
       font-size: 13px; color: var(--text-muted); min-width: 44px;
-      text-align: center; font-variant-numeric: tabular-nums;
+      text-align: center;
+      /* tabular-nums —— 数字等宽，避免百分比跳动时标签宽度忽大忽小 */
+      font-variant-numeric: tabular-nums;
       flex-shrink: 0;
     }
     #controls .divider {
@@ -126,6 +160,8 @@
       margin: 0 4px; flex-shrink: 0;
     }
     #zoomReset { font-size: 13px !important; padding: 0 12px !important; }
+
+    /* 三个图标按钮统一尺寸 */
     #themeToggle, #fontToggle, #fullscreenToggle {
       font-size: 18px !important;
       padding: 0 !important;
@@ -134,6 +170,7 @@
     #fontToggle { font-size: 15px !important; font-weight: 700; }
     #fullscreenToggle { font-size: 16px !important; }
 
+    /* ---------------- 字号调节面板 ---------------- */
     #fontPanel {
       position: fixed;
       top: 64px; left: 50%;
@@ -150,6 +187,8 @@
                   background 0.25s ease, border-color 0.25s ease;
       white-space: nowrap;
     }
+    /* 用 opacity+visibility 隐藏（而不是 display:none）
+       这样可以保留过渡动画：淡出 + 上移一点 */
     #fontPanel.hidden {
       opacity: 0; visibility: hidden;
       transform: translateX(-50%) translateY(-6px);
@@ -174,6 +213,8 @@
       min-width: 46px; text-align: center;
       color: var(--text); font-variant-numeric: tabular-nums;
     }
+
+    /* range 滑块自定义样式（各浏览器伪元素不通用，WebKit 和 Firefox 要分开写） */
     #fontSlider {
       -webkit-appearance: none; appearance: none;
       width: 140px; height: 4px;
@@ -181,6 +222,7 @@
       border-radius: 2px;
       outline: none; cursor: pointer;
     }
+    /* WebKit 的滑块手柄 */
     #fontSlider::-webkit-slider-thumb {
       -webkit-appearance: none; appearance: none;
       width: 16px; height: 16px; border-radius: 50%;
@@ -190,6 +232,7 @@
       transition: transform 0.1s;
     }
     #fontSlider::-webkit-slider-thumb:active { transform: scale(1.2); }
+    /* Firefox 的滑块手柄和轨道 */
     #fontSlider::-moz-range-thumb {
       width: 16px; height: 16px; border-radius: 50%;
       background: var(--slider-fill);
@@ -200,6 +243,7 @@
       height: 4px; border-radius: 2px;
     }
 
+    /* ---------------- 日期详情浮层 ---------------- */
     #detailPanel {
       position: fixed; z-index: 50;
       min-width: 220px; max-width: 300px;
@@ -209,8 +253,12 @@
       border-radius: 14px; padding: 14px 16px;
       color: var(--detail-text); font-size: 13px; line-height: 1.6;
       box-shadow: 0 8px 32px var(--shadow);
+      /* 关键：pointer-events:none
+         让浮层不拦截鼠标/触摸事件，否则浮层盖住日期格子后
+         鼠标移到浮层上时底层日期就"消失"了，hover 会闪 */
       pointer-events: none;
       transition: opacity 0.12s ease, background 0.25s ease, border-color 0.25s ease;
+      /* left/top 由 JS 动态设置 */
       left: 0; top: 0;
     }
     #detailPanel.hidden { opacity: 0; visibility: hidden; }
@@ -234,8 +282,10 @@
     .d-yiji .yi { color: var(--detail-yi); display: block; margin-bottom: 3px; }
     .d-yiji .ji { color: var(--detail-ji); display: block; }
 
+    /* ---------------- 加载遮罩 ---------------- */
     #loading {
-      position: fixed; inset: 0; z-index: 200;
+      position: fixed; inset: 0; /* inset:0 = top/right/bottom/left 全 0 */
+      z-index: 200;
       display: flex; flex-direction: column;
       align-items: center; justify-content: center;
       gap: 16px; background: var(--loading-bg); color: var(--text-muted);
@@ -243,16 +293,18 @@
     }
     #loading .spinner {
       width: 40px; height: 40px;
+      /* 半圆环 + 一个高亮边，旋转起来就是经典的"转圈"加载效果 */
       border: 3px solid var(--spinner-track);
       border-top-color: var(--spinner-color);
-      border-radius: 50%; animation: spin 0.9s linear infinite;
+      border-radius: 50%;
+      animation: spin 0.9s linear infinite;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
 
     #progressBar {
       width: 200px; height: 4px;
       background: var(--progress-bg);
-      border-radius: 2px; overflow: hidden;
+      border-radius: 2px; overflow: hidden; /* 让内部填充的圆角不被遮挡 */
       margin-top: 4px;
     }
     #progressFill {
@@ -262,18 +314,22 @@
       transition: width 0.15s ease;
     }
 
+    /* ---------------- 竖屏提示遮罩 ---------------- */
     #rotateHint {
       display: none; position: fixed; inset: 0;
       background: var(--loading-bg); z-index: 150;
       align-items: center; justify-content: center;
       color: var(--text); text-align: center;
+      /* box-sizing: border-box —— padding 计算在宽度内，
+         避免 inset:0 + padding 撑出滚动条 */
       padding: 24px; box-sizing: border-box;
     }
     #rotateHint .rotate-icon {
       font-size: 56px; margin-bottom: 16px;
-      display: inline-block;
+      display: inline-block; /* 只有 inline-block 才能应用 transform */
       animation: rotateSpin 3s ease-in-out infinite;
     }
+    /* 让图标周期性地摆动 90°，暗示"请旋转手机" */
     @keyframes rotateSpin {
       0%, 30% { transform: rotate(0deg); }
       60%, 90% { transform: rotate(90deg); }
@@ -310,9 +366,12 @@
     }
     #rotateFeedback {
       font-size: 12px; color: #f59e0b;
-      margin-top: 16px; min-height: 16px;
+      margin-top: 16px;
+      /* min-height 保留占位空间，防止反馈文字出现/消失时布局跳动 */
+      min-height: 16px;
     }
 
+    /* 小屏适配：整体缩小控制栏尺寸，避免占满一整行 */
     @media (max-width: 480px) {
       #controls { top: 10px; padding: 6px 8px; gap: 4px; }
       #controls button { height: 30px; min-width: 30px; padding: 0 10px; font-size: 14px; }
@@ -323,10 +382,12 @@
       .d-date { font-size: 15px; }
       #fontPanel { top: 56px; padding: 8px 12px; gap: 8px; }
       #fontSlider { width: 100px; }
-      #fontPanel .font-label { display: none; }
+      #fontPanel .font-label { display: none; } /* 小屏隐藏文字标签，省空间 */
     }
   </style>
 
+  <!-- importmap：让浏览器知道 `import 'three'` 这种"裸模块名"该去哪加载
+       three r159 起移除了 UMD 构建（build/three.min.js 不存在了），必须用 ESM -->
   <script type="importmap">
   {
     "imports": {
@@ -338,8 +399,10 @@
 </head>
 <body data-theme="dark">
 
+  <!-- Three.js canvas 的挂载点 -->
   <div id="app"></div>
 
+  <!-- 顶部控制栏 -->
   <div id="controls">
     <button id="prevYear" title="上一年">‹</button>
     <span id="yearLabel"></span>
@@ -355,6 +418,7 @@
     <button id="fullscreenToggle" title="全屏">⛶</button>
   </div>
 
+  <!-- 字号调节面板（默认隐藏，class="hidden"） -->
   <div id="fontPanel" class="hidden">
     <span class="font-label">字体大小</span>
     <button class="font-btn" id="fontMinus" title="缩小">−</button>
@@ -364,14 +428,17 @@
     <button class="font-btn font-reset" id="fontReset" title="恢复默认">重置</button>
   </div>
 
+  <!-- 日期详情浮层（内容由 JS 动态填充） -->
   <div id="detailPanel" class="hidden"></div>
 
+  <!-- 加载遮罩 -->
   <div id="loading">
     <div class="spinner"></div>
     <p id="loadingText">正在加载日历…</p>
     <div id="progressBar"><div id="progressFill"></div></div>
   </div>
 
+  <!-- 竖屏提示遮罩 -->
   <div id="rotateHint">
     <div>
       <div class="rotate-icon">⟳</div>
@@ -384,6 +451,8 @@
     </div>
   </div>
 
+  <!-- lunar-javascript：UMD 构建，加载后会挂到 window 上
+       （window.Solar / window.Lunar / window.HolidayUtil） -->
   <script src="https://cdn.jsdelivr.net/npm/lunar-javascript@1.7.7/lunar.js"></script>
 
   <script type="module">
@@ -392,9 +461,29 @@
 
     // ============================================================
     // 0. 安全存储封装
+    // ------------------------------------------------------------
+    // 【为什么需要这个】
+    //   页面可能运行在：
+    //     - sandboxed iframe（缺少 allow-same-origin，最典型）
+    //     - Safari 无痕模式（存储被隔离）
+    //     - 浏览器禁用 cookie/localStorage
+    //   此时直接访问 window.localStorage 会抛 SecurityError，
+    //   而异常发生在模块顶层，会导致整个脚本中止执行——日历完全不显示。
+    //
+    // 【降级策略】三层
+    //   1. localStorage  —— 跨会话持久化（首选）
+    //   2. sessionStorage —— 同一标签页刷新保留
+    //   3. 内存 Map      —— 仅当前页面生命周期，关闭即丢失
+    //
+    // 【关键设计】
+    //   无论后端是哪层，都始终写内存 Map，
+    //   保证本次会话内 getItem 一定能读到刚 setItem 的值。
     // ============================================================
     const safeStorage = (function () {
       const memoryStore = Object.create(null);
+
+      // 试写试读：主动触发潜在的 SecurityError / QuotaExceededError，
+      // 若抛出异常则返回 null，调用方据此判断该层不可用。
       function tryStorage(type) {
         try {
           const s = window[type];
@@ -405,6 +494,8 @@
           return s;
         } catch (e) { return null; }
       }
+
+      // 优先 localStorage，其次 sessionStorage
       const local = tryStorage('localStorage');
       const session = tryStorage('sessionStorage');
       const backend = local || session || null;
@@ -414,16 +505,20 @@
           try {
             if (backend) {
               const v = backend.getItem(key);
+              // 注意：null 表示"不存在"，应该回退到内存层
               if (v !== null) return v;
             }
           } catch (e) {}
           return key in memoryStore ? memoryStore[key] : null;
         },
+
         setItem: function (key, value) {
           value = String(value);
+          // 内存层永远写入，保证后续读取一致
           memoryStore[key] = value;
           try { if (backend) backend.setItem(key, value); } catch (e) {}
         },
+
         removeItem: function (key) {
           delete memoryStore[key];
           try { if (backend) backend.removeItem(key); } catch (e) {}
@@ -432,38 +527,55 @@
     })();
 
     // ============================================================
-    // 1. 常量
+    // 1. 常量定义
+    // ------------------------------------------------------------
+    // 场景使用"世界单位"，与屏幕像素完全解耦。
+    // 卡片 4×3.5，网格 4 列 3 行，间隙 0.6，整年总尺寸 ≈ 17.8×11.7，
+    // 正交相机视野高度固定 20，正好装下整年。
     // ============================================================
-    const CARD_W = 4.0;
-    const CARD_H = 3.5;
-    const GAP_X = 0.6;
-    const GAP_Y = 0.6;
-    const COLS = 4;
-    const ROWS = 3;
-    const FRUSTUM_SIZE = 20;
+    const CARD_W = 4.0;      // 单张月份卡片的世界宽度
+    const CARD_H = 3.5;      // 单张月份卡片的世界高度
+    const GAP_X = 0.6;       // 卡片水平间距
+    const GAP_Y = 0.6;       // 卡片垂直间距
+    const COLS = 4;          // 网格列数
+    const ROWS = 3;          // 网格行数
+    const FRUSTUM_SIZE = 20; // 正交相机视野高度（世界单位）
 
+    // 整年网格的总尺寸
+    // 4*4 + 3*0.6 = 17.8；3*3.5 + 2*0.6 = 11.7
     const TOTAL_W = COLS * CARD_W + (COLS - 1) * GAP_X;
     const TOTAL_H = ROWS * CARD_H + (ROWS - 1) * GAP_Y;
 
+    // 画布纹理参数
+    // DPR 上限 1.5：既保证高清屏文字锐利，又把纹理内存控制住。
+    // 若不限制，iPhone (DPR=3) 会生成超大纹理，上传 GPU 时卡顿。
     const DPR = Math.min(window.devicePixelRatio || 1, 1.5);
     const CANVAS_W = 960;
     const CANVAS_H = 840;
 
+    // 画布内的日期网格几何（像素坐标，与卡片世界坐标无关）
+    // 7 列等分：(960 - 左右各 47) / 7 ≈ 123.7
     const GRID_START_X = 47;
     const GRID_CELL_W = (CANVAS_W - 94) / 7;
+    // 6 行等分：(840 - 顶部 159 - 底部 22) / 6 ≈ 109.8
     const GRID_START_Y = 159;
     const GRID_CELL_H = (CANVAS_H - GRID_START_Y - 22) / 6;
 
-    const ROW_DAY_Y = -32;
-    const ROW_LUNAR_Y = 2;
-    const ROW_FEST_Y = 36;
+    // 三行文字的垂直偏移（相对格子中心 cy）
+    const ROW_DAY_Y = -32;   // 公历日（在中心上方 32px）
+    const ROW_LUNAR_Y = 2;   // 农历/节气（几乎在中心）
+    const ROW_FEST_Y = 36;   // 节日（在中心下方 36px）
 
+    // 字号基准值，最终字号 = 基准 × fontScale（fontScale 范围见下）
     const BASE_TITLE_FONT = 51;
     const BASE_HEADER_FONT = 23;
     const BASE_DAY_FONT = 32;
     const BASE_LUNAR_FONT = 23;
     const BASE_FEST_FONT = 28;
 
+    // 字号缩放范围
+    // 上限 125% 是布局验算后的值：再大会导致三行文字在 110px 高的格子
+    // 里互相重叠，识别度反而下降
     const MIN_FONT_SCALE = 0.85;
     const MAX_FONT_SCALE = 1.25;
     const DEFAULT_FONT_SCALE = 1.0;
@@ -472,6 +584,9 @@
 
     // ============================================================
     // 2. 主题定义
+    // ------------------------------------------------------------
+    // canvas 内部绘制无法读取 CSS 变量，所以需要一份 JS 版主题表。
+    // 每次切换主题都调用 redrawAllCards() 重绘 12 张 canvas。
     // ============================================================
     const THEMES = {
       dark: {
@@ -491,8 +606,8 @@
         festivalToday: '#fef3c7',
         grid: 'rgba(148,163,184,0.07)',
         selectedBorder: '#fbbf24',
-        accentL: 58,
-        accentS: 72
+        accentL: 58, // 左侧强调色条 HSL 亮度
+        accentS: 72  // HSL 饱和度（色相由月份推算）
       },
       light: {
         sceneBg: 0xf1f5f9,
@@ -516,19 +631,25 @@
       }
     };
 
+    // 节日文字颜色：按主题 + 节日类型区分
+    // - lunar：农历节日（春节、端午…），金色系
+    // - solar：公历节日（元旦、劳动节…），紫色系
+    // - holiday：法定节假日（如果将来接入 HolidayUtil 高亮），红色系
     const FESTIVAL_COLORS = {
       dark: { lunar: '#f59e0b', solar: '#a78bfa', holiday: '#ef4444' },
       light: { lunar: '#b45309', solar: '#6d28d9', holiday: '#dc2626' }
     };
 
+    // 从存储恢复上次使用的主题（默认深色）
     let currentThemeName = safeStorage.getItem('calendar-theme') || 'dark';
-    if (!THEMES[currentThemeName]) currentThemeName = 'dark';
+    if (!THEMES[currentThemeName]) currentThemeName = 'dark'; // 防御非法值
     let currentTheme = THEMES[currentThemeName];
     document.body.dataset.theme = currentThemeName;
 
     // ============================================================
     // 3. 字号状态
     // ============================================================
+    // 用函数包裹边界钳制逻辑，避免在多处重复 Math.max/Math.min
     function clampFontScale(v) {
       return Math.max(MIN_FONT_SCALE, Math.min(MAX_FONT_SCALE, v));
     }
@@ -537,7 +658,16 @@
     fontScale = clampFontScale(fontScale);
 
     // ============================================================
-    // 4. 初始缩放
+    // 4. 初始缩放计算
+    // ------------------------------------------------------------
+    // 【正交相机的"缩放"】
+    //   camera.zoom 越大 → 视野越窄 → 内容看起来越大。
+    //   zoom=1 时可视宽度 = (right-left)，即 FRUSTUM_SIZE * aspect。
+    //   要让可视宽度 = targetViewWidth，就需要 zoom = (FRUSTUM_SIZE*aspect)/targetViewWidth。
+    //
+    // 【手机 vs 桌面】
+    //   手机（<1024px）：targetViewWidth=10 → 可见约 2.5 列卡片，文字清晰
+    //   桌面（≥1024px）：targetViewWidth=19 → 几乎能看全整年
     // ============================================================
     function computeBaseZoom() {
       const a = window.innerWidth / window.innerHeight;
@@ -549,11 +679,15 @@
     let baseZoom = computeBaseZoom();
 
     // ============================================================
-    // 5. Three.js 初始化
+    // 5. Three.js 核心初始化
     // ============================================================
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(currentTheme.sceneBg);
 
+    // 正交相机构造函数参数顺序：(left, right, top, bottom, near, far)
+    // 宽高以 0 为中心对称分布：
+    //   left = -(视野宽)/2, right = +(视野宽)/2
+    //   视野宽 = FRUSTUM_SIZE * aspect
     const camera = new THREE.OrthographicCamera(
       (-FRUSTUM_SIZE * aspect) / 2, (FRUSTUM_SIZE * aspect) / 2,
        FRUSTUM_SIZE / 2, -FRUSTUM_SIZE / 2,
@@ -573,40 +707,55 @@
     const canvasEl = renderer.domElement;
 
     // ============================================================
-    // 6. camera-controls —— 只处理鼠标，触摸全部手动接管
+    // 6. camera-controls 初始化（只处理鼠标）
+    // ------------------------------------------------------------
+    // 【为什么不使用库的触摸功能】
+    //   camera-controls 对正交相机的双指缩放存在已知兼容问题：
+    //     - TOUCH_DOLLY_TRUCK：对正交相机完全无效（正交相机没有 dolly 概念）
+    //     - TOUCH_ZOOM_TRUCK： 速度极慢，用户几乎感知不到
+    //   因此禁用全部触摸处理，在第 7 节手动实现手势数学。
     // ============================================================
     CameraControls.install({ THREE });
 
     const cameraControls = new CameraControls(camera, canvasEl);
 
-    // 鼠标：拖动平移（camera-controls 处理）
+    // 鼠标：拖动平移（带阻尼，手感平滑）
     cameraControls.mouseButtons.left = CameraControls.ACTION.TRUCK;
     cameraControls.mouseButtons.right = CameraControls.ACTION.TRUCK;
+    // 滚轮自己处理（见第 8 节），禁用库的
     cameraControls.mouseButtons.wheel = CameraControls.ACTION.NONE;
     cameraControls.mouseButtons.middle = CameraControls.ACTION.NONE;
 
-    // ⚠️ 关键：禁用 camera-controls 的全部触摸处理
-    // 正交相机的 dolly/zoom 手势在库内部存在兼容问题，
-    // 我们改为完全手动实现，保证双指缩放稳定可用。
+    // ⚠️ 关键：禁用库的全部触摸行为
     cameraControls.touches.one = CameraControls.ACTION.NONE;
     cameraControls.touches.two = CameraControls.ACTION.NONE;
     cameraControls.touches.three = CameraControls.ACTION.NONE;
 
     cameraControls.smoothTime = 0.2;
     cameraControls.draggingSmoothTime = 0.08;
+
+    // 缩放上下限：minZoom=baseZoom/3 大致等于全览，maxZoom=baseZoom*8 单卡满屏
     cameraControls.minZoom = baseZoom / 3;
     cameraControls.maxZoom = baseZoom * 8;
+
+    // 边界约束：把相机位置限制在略大于网格的盒子里，
+    // 防止用户把画面拖到"空白宇宙"里找不到日历
     cameraControls.setBoundary(new THREE.Box3(
       new THREE.Vector3(-TOTAL_W / 2 - 1, -TOTAL_H / 2 - 1, -5),
       new THREE.Vector3( TOTAL_W / 2 + 1,  TOTAL_H / 2 + 1,  5)
     ));
+
     cameraControls.zoomTo(baseZoom, false);
     cameraControls.setLookAt(0, 0, 10, 0, 0, 0, false);
     cameraControls.update(0);
 
-    // ---- 应用相机状态（同步到 camera-controls 的内部状态）----
-    // 使用 setLookAt(false) 和 zoomTo(false) 保证同步，这样
-    // cameraControls.update() 不会用 damping 覆盖我们手动设置的位置。
+    // 【applyCamera：统一设置相机位置+缩放的入口】
+    // 第二参数 false = 不走阻尼动画，立即应用。
+    // 原因：手动触摸控制时每帧都在计算新位置，
+    //       如果走 damping，camera-controls 的插值会和我们算的值打架，
+    //       表现为"拖动时画面跟不紧手指"。
+    // 同时这一步也把 camera-controls 内部状态同步到我们设置的值，
+    // 避免下一帧 cameraControls.update(delta) 用 damping 把我们覆盖掉。
     function applyCamera(x, y, zoom) {
       const z = Math.max(
         cameraControls.minZoom,
@@ -617,7 +766,23 @@
     }
 
     // ============================================================
-    // 7. 手动触摸控制（单指平移 / 双指缩放 + 平移）
+    // 7. 手动触摸控制（单指平移 / 双指缩放+平移）
+    // ------------------------------------------------------------
+    // 【坐标系约定】
+    //   屏幕（clientX/clientY）：像素，左上角为原点
+    //   NDC（NDC x/y）：-1~1，屏幕中心为 0，向上为正
+    //   世界（x/y）：three 场景单位，y 轴向上为正
+    //
+    // 【核心公式】
+    //   某 zoom 下可视的世界宽度：
+    //     visibleW = (camera.right - camera.left) / camera.zoom
+    //   屏幕某点 (px,py) 对应的世界坐标（相机中心为 (cx,cy)）：
+    //     nx = (px / rect.width) * 2 - 1        （→ NDC）
+    //     wx = cx + nx * visibleW / 2
+    //
+    // 【双指缩放的不变量】
+    //   要求"起始双指中点所指的那个世界点"在缩放过程中
+    //   始终位于"当前双指中点"，这样视觉上就是"抓住地图缩放"。
     // ============================================================
     let touchDrag = null;   // 单指拖动状态
     let touchPinch = null;  // 双指缩放状态
@@ -628,23 +793,27 @@
 
     canvasEl.addEventListener('touchstart', (e) => {
       if (e.touches.length === 1) {
+        // ---- 单指按下：记录起点 ----
         const t = e.touches[0];
         touchDrag = {
           startX: t.clientX,
           startY: t.clientY,
-          camX: camera.position.x,
+          camX: camera.position.x, // 按下时的相机位置（后续位移以此为基准）
           camY: camera.position.y
         };
         touchPinch = null;
       } else if (e.touches.length === 2) {
+        // ---- 双指按下：记录完整的手势初始快照 ----
         const t0 = e.touches[0];
         const t1 = e.touches[1];
         touchDrag = null;
         touchPinch = {
+          // 两指之间欧氏距离（后续每帧比较 dist / startDist 得到缩放倍率）
           startDist: Math.hypot(
             t0.clientX - t1.clientX,
             t0.clientY - t1.clientY
           ),
+          // 两指中点（缩放锚点）
           startCx: (t0.clientX + t1.clientX) / 2,
           startCy: (t0.clientY + t1.clientY) / 2,
           startZoom: camera.zoom,
@@ -652,21 +821,26 @@
           startCamY: camera.position.y
         };
       }
-    }, { passive: true });
+    }, { passive: true }); // 不需要 preventDefault，用 passive:true 让浏览器滚动更流畅
 
     canvasEl.addEventListener('touchmove', (e) => {
-      // ---- 单指平移 ----
+      // ---------------- 单指平移 ----------------
       if (e.touches.length === 1 && touchDrag) {
-        e.preventDefault();
+        e.preventDefault(); // 阻止移动端页面滚动
         const t = e.touches[0];
         const rect = getRect();
 
+        // 手指相对按下点的像素位移
         const dxScreen = t.clientX - touchDrag.startX;
         const dyScreen = t.clientY - touchDrag.startY;
 
-        // 屏幕像素位移 → 世界单位位移
+        // 当前 zoom 下可视的世界尺寸
         const visibleW = (camera.right - camera.left) / camera.zoom;
         const visibleH = (camera.top - camera.bottom) / camera.zoom;
+
+        // 像素 → 世界单位 的换算
+        // dx 取负：手指向右滑 → 内容跟手向右 → 相机需要向左移
+        // dy 取正：屏幕 y 向下，世界 y 向上，方向本来就相反
         const dxWorld = -(dxScreen / rect.width) * visibleW;
         const dyWorld = (dyScreen / rect.height) * visibleH;
 
@@ -678,12 +852,13 @@
         return;
       }
 
-      // ---- 双指缩放 + 平移（以双指中心为锚点）----
+      // ---------------- 双指缩放 + 平移 ----------------
       if (e.touches.length === 2 && touchPinch) {
         e.preventDefault();
         const t0 = e.touches[0];
         const t1 = e.touches[1];
 
+        // 当前两指距离与中点
         const dist = Math.hypot(
           t0.clientX - t1.clientX,
           t0.clientY - t1.clientY
@@ -692,32 +867,40 @@
         const cy = (t0.clientY + t1.clientY) / 2;
         const rect = getRect();
 
-        if (touchPinch.startDist < 1) return; // 防御：两指重合
+        // 防御：起始时两指几乎重合，比值会算出 NaN/Infinity
+        if (touchPinch.startDist < 1) return;
 
-        // 缩放倍数
+        // ---- 缩放倍率 ----
+        // 距离变成原来的 2 倍 → zoom 也要 ×2 → 内容看起来放大 2 倍
         const scaleFactor = dist / touchPinch.startDist;
         const newZoom = Math.max(
           cameraControls.minZoom,
           Math.min(cameraControls.maxZoom, touchPinch.startZoom * scaleFactor)
         );
 
-        // 计算起始双指中心对应的世界坐标（在 z=0 平面上）
+        // ---- 计算"起始双指中点"对应的世界坐标（锚点） ----
+        // 第 1 步：屏幕坐标 → NDC（-1~1）
         const ndcStartX = ((touchPinch.startCx - rect.left) / rect.width) * 2 - 1;
         const ndcStartY = -((touchPinch.startCy - rect.top) / rect.height) * 2 + 1;
 
+        // 第 2 步：起始时刻的可视尺寸
         const visibleWStart = (camera.right - camera.left) / touchPinch.startZoom;
         const visibleHStart = (camera.top - camera.bottom) / touchPinch.startZoom;
 
+        // 第 3 步：世界坐标 = 相机中心 + NDC 偏移
         const anchorWorldX =
           touchPinch.startCamX + ndcStartX * visibleWStart / 2;
         const anchorWorldY =
           touchPinch.startCamY + ndcStartY * visibleHStart / 2;
 
-        // 当前双指中心的 NDC（用作平移目标位置）
+        // ---- 当前双指中点的 NDC ----
         const ndcNowX = ((cx - rect.left) / rect.width) * 2 - 1;
         const ndcNowY = -((cy - rect.top) / rect.height) * 2 + 1;
 
-        // 让 anchorWorld 仍然位于当前双指中心 → 反推相机位置
+        // ---- 反推新相机位置 ----
+        // 目标：让 anchorWorld 在新视角下仍然落在当前双指中点的 NDC 位置
+        // 即：anchorWorld = newCam + ndcNow * visibleNew / 2
+        // 移项得：newCam = anchorWorld - ndcNow * visibleNew / 2
         const visibleWNew = (camera.right - camera.left) / newZoom;
         const visibleHNew = (camera.top - camera.bottom) / newZoom;
 
@@ -727,14 +910,16 @@
         applyCamera(newCamX, newCamY, newZoom);
         return;
       }
-    }, { passive: false });
+    }, { passive: false }); // 必须 !passive 才能 preventDefault
 
     canvasEl.addEventListener('touchend', (e) => {
       if (e.touches.length === 0) {
+        // 所有手指离开
         touchDrag = null;
         touchPinch = null;
       } else if (e.touches.length === 1) {
-        // 从双指变单指：重新记录单指拖动起点
+        // 从双指变单指：立即把剩下那根手指当作新的单指拖动起点，
+        // 这样手势会平滑过渡，不会出现"卡住"或"跳一下"
         touchPinch = null;
         const t = e.touches[0];
         touchDrag = {
@@ -746,6 +931,7 @@
       }
     }, { passive: true });
 
+    // 系统中断（来电、通知等）时清空状态
     canvasEl.addEventListener('touchcancel', () => {
       touchDrag = null;
       touchPinch = null;
@@ -753,23 +939,42 @@
 
     // ============================================================
     // 8. 滚轮缩放（PC）
+    // ------------------------------------------------------------
+    // camera-controls 的 wheel 处理在正交相机上不总可靠，
+    // 因此直接在 canvas 上监听并手动调用 zoomTo。
+    //
+    // intensity 归一化：
+    //   鼠标滚轮一次 deltaY ≈ 100，intensity ≈ 1
+    //   触控板连续滚动 deltaY 可能只有 3~10，intensity 很小 → 平滑细调
+    //   Math.min(..., 3) 防止某些设备报超大 deltaY 导致一下缩到底
     // ============================================================
     canvasEl.addEventListener('wheel', (e) => {
       e.preventDefault();
       const intensity = Math.min(Math.abs(e.deltaY) / 100, 3);
       const factor = e.deltaY > 0
-        ? Math.pow(0.88, intensity)
-        : Math.pow(1.14, intensity);
+        ? Math.pow(0.88, intensity)   // 向下滚：每次 ×0.88，缩小
+        : Math.pow(1.14, intensity);  // 向上滚：每次 ×1.14，放大
       const newZoom = Math.max(
         cameraControls.minZoom,
         Math.min(cameraControls.maxZoom, camera.zoom * factor)
       );
+      // 已经到达边界时直接 return，避免无意义的渲染
       if (Math.abs(newZoom - camera.zoom) < 0.0001) return;
       cameraControls.zoomTo(newZoom, false);
     }, { passive: false });
 
     // ============================================================
     // 9. 日期数据
+    // ------------------------------------------------------------
+    // 【月份约定】
+    //   lunar-javascript 的 fromYmd/getHoliday 使用 1~12 的月份，
+    //   而本文件内部统一用 0~11（与 JS Date 一致），
+    //   因此每次调用这两个 API 都要 +1。
+    //
+    // 【缓存】
+    //   切换主题、字号时会重绘 12 张卡片共 365 天，
+    //   每次重算农历需要多次跨库调用（低端手机 300ms+），
+    //   所以用 Map 缓存结果，按 year-month-day 作键。
     // ============================================================
     const SolarLib = window.Solar;
     const HolidayUtilLib = window.HolidayUtil;
@@ -785,9 +990,14 @@
 
       if (SolarLib) {
         try {
+          // 注意 month+1：内部 0-based → 库 1-based
           const solar = SolarLib.fromYmd(year, month + 1, day);
           const l = solar.getLunar();
 
+          // ---- 农历行显示优先级 ----
+          // 1) 节气：如"清明"、"谷雨"，信息量最大
+          // 2) 农历初一：显示月份名，如"二月"
+          // 3) 其他日子：显示农历日，如"初五"
           const jieQi = l.getJieQi();
           if (jieQi) {
             lunar = { text: jieQi, type: 'jieqi' };
@@ -797,18 +1007,23 @@
             lunar = { text: l.getDayInChinese(), type: 'lunar' };
           }
 
+          // ---- 农历节日（春节/元宵/端午/中秋/七夕…）----
+          // 只在对应那一天返回，不会跨天
           const lunarFests = l.getFestivals();
           if (lunarFests) {
             for (let i = 0; i < lunarFests.length; i++) {
               const f = lunarFests[i];
               festivals.push({
                 name: f,
+                // 截断到 4 字以内，避免文字超出 124px 的格子
                 shortName: f.length > 4 ? f.substring(0, 4) : f,
                 type: 'lunar',
-                priority: 15
+                priority: 15 // 农历节日优先级更高
               });
             }
           }
+
+          // ---- 公历节日（元旦/劳动节/国庆节/圣诞…）----
           const solarFests = solar.getFestivals();
           if (solarFests) {
             for (let i = 0; i < solarFests.length; i++) {
@@ -824,17 +1039,22 @@
         } catch (e) {}
       }
 
+      // 降序排序，卡片只显示第一条（优先农历节日）
       festivals.sort((a, b) => b.priority - a.priority);
+
       const data = { lunar, festivals };
       dateCache.set(key, data);
       return data;
     }
 
+    // 假期/调休信息只在详情浮层中使用，不在卡片上标记
+    // （因为放假天数每年不同、会跨多天，如果铺开显示会非常乱）
     function getHolidayStatus(year, month, day) {
       if (!HolidayUtilLib) return null;
       try {
         const h = HolidayUtilLib.getHoliday(year, month + 1, day);
         if (!h) return null;
+        // isWork=true 表示调休上班日；false 表示放假
         return { name: h.getName(), isWork: h.isWork() };
       } catch (e) {
         return null;
@@ -842,20 +1062,37 @@
     }
 
     // ============================================================
-    // 10. 选中状态
+    // 10. 选中状态（点击高亮用）
     // ============================================================
     let selected = null;
 
     // ============================================================
-    // 11. 绘制
+    // 11. 绘制月份卡片到 canvas
+    // ------------------------------------------------------------
+    // 【画布坐标系】
+    //   (0,0) 左上角 → (W,H) 右下角，y 轴向下
+    //   GRID_START_X/Y + GRID_CELL_W/H 已在常量区定义
+    //
+    // 【绘制顺序】（后画的覆盖先画的）
+    //   卡片圆角背景 → 左侧强调色条 → 边框 →
+    //   月份标题 → 星期表头 → 逐日绘制（今日底 → 选中框 → 三行文字）→
+    //   行间分隔线
     // ============================================================
     function drawMonthToCanvas(ctx, W, H, year, month, sel, theme, themeName, fs) {
+      // ---- 1. 卡片圆角背景 ----
       ctx.fillStyle = theme.cardBg;
       ctx.beginPath();
+      // roundRect 是较新的 Canvas API，老浏览器（如旧版 Firefox）没有，
+      // 用 rect 兜底（虽然会变成直角，但至少能显示）
       if (ctx.roundRect) ctx.roundRect(0, 0, W, H, 22);
       else ctx.rect(0, 0, W, H);
       ctx.fill();
 
+      // ---- 2. 左侧强调色条 ----
+      // 色相按月份均分 360°：1月≈0°(红)、4月≈90°(绿)、7月≈180°(青)、
+      // 10月≈270°(紫)，让每个月有自己的辨识色。
+      // 圆角数组顺序：[左上, 右上, 右下, 左下]，
+      // 所以左侧带圆角、右侧直角（贴合卡片左边缘）
       const hue = Math.round((month / 12) * 360);
       ctx.fillStyle = 'hsl(' + hue + ', ' + theme.accentS + '%, ' + theme.accentL + '%)';
       ctx.beginPath();
@@ -863,6 +1100,8 @@
       else ctx.rect(0, 0, 9, H);
       ctx.fill();
 
+      // ---- 3. 细边框 ----
+      // 向内缩进 1px 让线宽完全落在卡片内，不会被卡片边缘裁掉一半
       ctx.strokeStyle = theme.cardBorder;
       ctx.lineWidth = 2;
       ctx.beginPath();
@@ -870,43 +1109,68 @@
       else ctx.rect(1, 1, W - 2, H - 2);
       ctx.stroke();
 
+      // ---- 4. 字体字符串预计算 ----
+      // 每次 fillText 前都拼接字体字符串会产生大量临时对象，
+      // 365 天 × 4 次 ≈ 1500 次拼接。提前算好可显著减少 GC 压力。
       const titleFont = 'bold ' + Math.round(BASE_TITLE_FONT * fs) + 'px system-ui, sans-serif';
       const headerFont = '600 ' + Math.round(BASE_HEADER_FONT * fs) + 'px system-ui, sans-serif';
       const dayFont = 'bold ' + Math.round(BASE_DAY_FONT * fs) + 'px system-ui, sans-serif';
       const lunarFont = Math.round(BASE_LUNAR_FONT * fs) + 'px system-ui, sans-serif';
       const festFont = 'bold ' + Math.round(BASE_FEST_FONT * fs) + 'px system-ui, sans-serif';
 
+      // ---- 5. 月份标题（只显示月份，年份在顶栏看）----
       ctx.fillStyle = theme.title;
       ctx.font = titleFont;
       ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
+      ctx.textBaseline = 'middle'; // 以文字垂直中线对齐 y 坐标，避免不同字号基线漂移
       ctx.fillText((month + 1) + '月', W / 2, 58);
 
+      // ---- 6. 星期表头 ----
+      // 周日/周六用红色区分，其他用灰色
       ctx.font = headerFont;
       for (let i = 0; i < 7; i++) {
         ctx.fillStyle = (i === 0 || i === 6) ? theme.weekHeaderWeekend : theme.weekHeader;
-        ctx.fillText(WEEK_DAYS[i], GRID_START_X + i * GRID_CELL_W + GRID_CELL_W / 2, 128);
+        ctx.fillText(
+          WEEK_DAYS[i],
+          GRID_START_X + i * GRID_CELL_W + GRID_CELL_W / 2,
+          128
+        );
       }
 
+      // ---- 7. 日期网格 ----
+      // firstDay 是本月 1 号是星期几（0=周日），决定第一行前面空几格
+      // daysInMonth 是本月总天数（new Date(year, month+1, 0) 表示下个月第 0 天 = 本月最后一天）
       const firstDay = new Date(year, month, 1).getDay();
       const daysInMonth = new Date(year, month + 1, 0).getDate();
 
+      // 判断是否是"今天"，用于高亮
       const today = new Date();
       const isCurrentYear = year === today.getFullYear();
       const isCurrentMonth = month === today.getMonth();
       const todayDate = today.getDate();
 
+      // row/col：当前日期在 6 行 × 7 列网格中的位置
+      // 1 号不一定在第 0 行第 0 列，所以在 firstDay 那列开始
       let row = 0, col = firstDay;
       for (let d = 1; d <= daysInMonth; d++) {
+        // 当前格子的中心像素坐标
         const cx = GRID_START_X + col * GRID_CELL_W + GRID_CELL_W / 2;
         const cy = GRID_START_Y + row * GRID_CELL_H + GRID_CELL_H / 2;
-        const isToday = isCurrentYear && isCurrentMonth && d === todayDate;
-        const isSelected = sel && sel.year === year && sel.month === month && sel.day === d;
 
+        const isToday = isCurrentYear && isCurrentMonth && d === todayDate;
+        const isSelected = sel
+          && sel.year === year
+          && sel.month === month
+          && sel.day === d;
+
+        // 拿到该日期的农历/节气/节日数据（走缓存）
         const data = getDateData(year, month, d);
         const lunar = data.lunar;
         const festivals = data.festivals;
 
+        // ---- 7a. 今日高亮底色 ----
+        // 尺寸 94×106 是包裹三行文字的最紧凑矩形，
+        // 上下各留一点 padding 看起来更舒服
         if (isToday) {
           ctx.fillStyle = theme.todayBg;
           ctx.beginPath();
@@ -915,6 +1179,8 @@
           ctx.fill();
         }
 
+        // ---- 7b. 选中金色边框 ----
+        // 比今日底色再大一圈（104×114），两者可以同时存在不打架
         if (isSelected) {
           ctx.strokeStyle = theme.selectedBorder;
           ctx.lineWidth = 4;
@@ -924,6 +1190,8 @@
           ctx.stroke();
         }
 
+        // ---- 7c. 第一行：公历日 ----
+        // 颜色优先级：今日(白) > 周末(红) > 普通(主题色)
         ctx.font = dayFont;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
@@ -932,12 +1200,16 @@
         else ctx.fillStyle = theme.dayNormal;
         ctx.fillText(String(d), cx, cy + ROW_DAY_Y);
 
+        // ---- 7d. 第二行：农历 / 节气 ----
+        // 节气用青色高亮，普通农历日用灰色
         ctx.font = lunarFont;
         if (isToday) ctx.fillStyle = theme.lunarToday;
         else if (lunar.type === 'jieqi') ctx.fillStyle = theme.lunarJieqi;
         else ctx.fillStyle = theme.lunar;
         ctx.fillText(lunar.text, cx, cy + ROW_LUNAR_Y);
 
+        // ---- 7e. 第三行：节日 ----
+        // 只显示优先级最高的一个节日（多个会溢出格子）
         if (festivals.length > 0) {
           const fc = FESTIVAL_COLORS[themeName][festivals[0].type] || theme.festivalToday;
           ctx.font = festFont;
@@ -945,10 +1217,14 @@
           ctx.fillText(festivals[0].shortName, cx, cy + ROW_FEST_Y);
         }
 
+        // ---- 移动到下一格 ----
         col++;
-        if (col > 6) { col = 0; row++; }
+        if (col > 6) { col = 0; row++; } // 一列排满就换行
       }
 
+      // ---- 8. 行间分隔线 ----
+      // 每行底部画一条淡线，边界更清晰。
+      // r=0~6 共 7 条，包括表格顶部和底部边界。
       ctx.strokeStyle = theme.grid;
       ctx.lineWidth = 1;
       for (let r = 0; r <= 6; r++) {
@@ -961,7 +1237,19 @@
     }
 
     // ============================================================
-    // 12. 卡片与 Hitbox
+    // 12. 卡片 Mesh 与 hitbox
+    // ------------------------------------------------------------
+    // 【hitbox 是什么】
+    //   一种"看不见但参与射线检测"的平面，
+    //   每个日期格子对应一个，用于鼠标/手指点击时精确拾取那一天。
+    //
+    // 【为什么挂在卡片 mesh 下作为子对象】
+    //   子对象继承父对象的变换。卡片缩放/平移时，
+    //   hitbox 自动跟随，不需要额外同步。
+    //
+    // 【为什么不用更简单的方案，比如给整个卡片加 1 个 hitbox + 自己算日期】
+    //   raycasting 方式更精确、代码更短，且利用了 Three.js 内置的
+    //   矩阵变换和视锥裁剪优化，性能非常好。
     // ============================================================
     let monthMeshes = [];
     let hitboxes = [];
@@ -971,55 +1259,78 @@
       const mat = new THREE.MeshBasicMaterial({
         transparent: true,
         depthWrite: false,
+        // colorWrite:false —— 完全不写入颜色缓冲，视觉上完全不可见
+        // 但几何体依然参与射线检测
         colorWrite: false
       });
       const mesh = new THREE.Mesh(geom, mat);
+      // z 稍微前移 0.01，避免和卡片平面 z-fighting（深度冲突闪烁）
       mesh.position.set(lx, ly, 0.01);
       mesh.userData = { year, month, day };
       return mesh;
     }
 
     function createMonthCard(year, month) {
+      // ---- 1. 创建离屏 canvas ----
       const canvas = document.createElement('canvas');
+      // 物理尺寸 = 逻辑尺寸 × DPR（保证高清屏清晰）
       canvas.width = CANVAS_W * DPR;
       canvas.height = CANVAS_H * DPR;
       const ctx = canvas.getContext('2d');
+      // 把 ctx 的整体坐标系缩放到逻辑像素，后续按 CANVAS_W/H 绘制即可
       ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
 
-      drawMonthToCanvas(ctx, CANVAS_W, CANVAS_H, year, month, selected, currentTheme, currentThemeName, fontScale);
+      drawMonthToCanvas(
+        ctx, CANVAS_W, CANVAS_H, year, month,
+        selected, currentTheme, currentThemeName, fontScale
+      );
 
+      // ---- 2. canvas → 纹理 ----
       const texture = new THREE.CanvasTexture(canvas);
+      // anisotropy：斜视角下纹理更清晰（不设的话斜着看会有锯齿）
       texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
       texture.colorSpace = THREE.SRGBColorSpace;
+      // 关键：禁用 mipmap 生成，否则每次重绘都要生成一整条 mip 链，浪费性能
       texture.minFilter = THREE.LinearFilter;
       texture.magFilter = THREE.LinearFilter;
       texture.generateMipmaps = false;
 
+      // ---- 3. 卡片平面 ----
       const geometry = new THREE.PlaneGeometry(CARD_W, CARD_H);
       const material = new THREE.MeshBasicMaterial({
         map: texture,
         transparent: true,
-        side: THREE.DoubleSide,
-        depthWrite: false
+        side: THREE.DoubleSide, // 允许从背面看到（虽然本场景用不上）
+        depthWrite: false        // 关闭深度写入，避免透明叠加时互相遮挡
       });
 
       const mesh = new THREE.Mesh(geometry, material);
       mesh.userData.isMonthCard = true;
       mesh.userData.year = year;
       mesh.userData.month = month;
-      mesh.userData.canvas = canvas;
+      mesh.userData.canvas = canvas;   // 保留引用，供后续局部重绘
       mesh.userData.texture = texture;
 
+      // ---- 4. 逐日创建 hitbox ----
+      // 【坐标映射】
+      //   画布坐标 (px,py) 以左上角为原点；
+      //   卡片局部坐标以卡片中心为原点，x 向右，y 向上。
+      //   公式：
+      //     lx = (px / CANVAS_W - 0.5) * CARD_W
+      //     ly = (0.5 - py / CANVAS_H) * CARD_H   ← y 反向
       const firstDay = new Date(year, month, 1).getDay();
       const daysInMonth = new Date(year, month + 1, 0).getDate();
 
       let row = 0, col = firstDay;
       for (let d = 1; d <= daysInMonth; d++) {
+        // 格子中心在画布中的位置
         const cx = GRID_START_X + col * GRID_CELL_W + GRID_CELL_W / 2;
         const cy = GRID_START_Y + row * GRID_CELL_H + GRID_CELL_H / 2;
 
+        // 画布中心 → 卡片局部
         const lx = (cx / CANVAS_W - 0.5) * CARD_W;
         const ly = (0.5 - cy / CANVAS_H) * CARD_H;
+        // 格子尺寸也按相同比例缩放
         const lw = (GRID_CELL_W / CANVAS_W) * CARD_W;
         const lh = (GRID_CELL_H / CANVAS_H) * CARD_H;
 
@@ -1036,18 +1347,34 @@
 
     // ============================================================
     // 13. 局部重绘
+    // ------------------------------------------------------------
+    // 主题/字号/选中状态变化时，只重绘受影响的卡片 canvas，
+    // 然后 texture.needsUpdate = true 让 Three.js 下一帧重新上传纹理。
+    // 这比销毁+重建整个 mesh 高效得多。
     // ============================================================
     function redrawMonthCard(year, month) {
+      // 在 monthMeshes 数组里找对应卡片
       const mesh = monthMeshes.find(
         (m) => m.userData.year === year && m.userData.month === month
       );
       if (!mesh) return;
+
       const canvas = mesh.userData.canvas;
       const ctx = canvas.getContext('2d');
-      ctx.setTransform(1, 0, 0, 1, 0, 0);
+
+      // 【关键】重置变换后再清空，否则清不干净
+      // 因为绘制时 ctx 已被缩放了 DPR 倍，
+      // 如果直接 clearRect(0,0,width,height)，会被 DPR 缩放到画布外
+      ctx.setTransform(1, 0, 0, 1, 0, 0); // 恢复单位矩阵
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-      drawMonthToCanvas(ctx, CANVAS_W, CANVAS_H, year, month, selected, currentTheme, currentThemeName, fontScale);
+      ctx.setTransform(DPR, 0, 0, DPR, 0, 0); // 重新应用 DPR 缩放
+
+      drawMonthToCanvas(
+        ctx, CANVAS_W, CANVAS_H, year, month,
+        selected, currentTheme, currentThemeName, fontScale
+      );
+
+      // 标记纹理需要重新上传
       mesh.userData.texture.needsUpdate = true;
     }
 
@@ -1057,18 +1384,22 @@
       });
     }
 
+    // 选中变更：重绘旧卡片（清除金色框）+ 新卡片（绘制金色框）
+    // 如果新旧在同一月份，只需重绘一次
     function setSelected(year, month, day) {
       const same = selected
         && selected.year === year
         && selected.month === month
         && selected.day === day;
-      if (same) return;
+      if (same) return; // 点同一个日期，不做任何事
 
       const old = selected;
       selected = { year, month, day };
 
       if (old) redrawMonthCard(old.year, old.month);
       if (!old || old.year !== year || old.month !== month) {
+        // 如果新旧卡片不是同一月份，才需要重绘新的那张
+        // （同一月份的话，上面那行已重绘过了）
         redrawMonthCard(year, month);
       }
     }
@@ -1082,10 +1413,29 @@
 
     // ============================================================
     // 14. 异步分帧构建
+    // ------------------------------------------------------------
+    // 【问题】
+    //   一次性构建 12 张卡片会阻塞主线程 1~3 秒，期间：
+    //     - loading 动画卡住（用户以为页面挂了）
+    //     - 按钮无响应
+    //     - 拖动手势完全失效
+    //
+    // 【方案】
+    //   每张卡片之间 await 一帧（requestAnimationFrame），
+    //   让浏览器有机会渲染 UI、处理用户输入。
+    //   总耗时略增，但用户感知的"卡顿"消失。
+    //
+    // 【并发保护】
+    //   buildGeneration 是个递增计数器。
+    //   每次 build 开始捕获当前代号，
+    //   在 await 回来后如果发现代号已变（说明用户又点了切换年份），
+    //   立即放弃这次构建，避免旧构建覆盖新状态。
     // ============================================================
     const loadingEl = document.getElementById('loading');
     const loadingText = document.getElementById('loadingText');
     const progressFill = document.getElementById('progressFill');
+
+    // 8 秒兜底：通常是 CDN 拉取 lunar.js 失败
     const loadTimer = setTimeout(() => {
       if (loadingText) loadingText.textContent = '加载失败：请检查网络后刷新';
       const sp = loadingEl && loadingEl.querySelector('.spinner');
@@ -1095,12 +1445,15 @@
     let isBuilding = false;
     let buildGeneration = 0;
 
+    // 让出一帧，确保浏览器能渲染 UI、响应用户操作
     function nextFrame() {
       return new Promise((resolve) => requestAnimationFrame(resolve));
     }
 
+    // 完全清理旧日历，释放所有 GPU/CPU 资源
     function clearCalendar() {
       monthMeshes.forEach((mesh) => {
+        // traverse 会递归访问 mesh 及其所有子对象（hitbox）
         mesh.traverse((child) => {
           if (child.geometry) child.geometry.dispose();
           if (child.material) {
@@ -1115,34 +1468,40 @@
     }
 
     async function buildCalendar(year) {
-      if (isBuilding) return;
+      if (isBuilding) return; // 防止重复进入
       isBuilding = true;
-      const gen = ++buildGeneration;
+      const gen = ++buildGeneration; // 捕获本次构建的代号
 
       try {
         clearCalendar();
         selected = null;
-        dateCache.clear();
+        dateCache.clear(); // 年份变了，旧缓存全部作废
 
         loadingEl.style.display = 'flex';
         loadingText.textContent = '正在构建日历…';
         progressFill.style.width = '0%';
 
         for (let m = 0; m < 12; m++) {
-          await nextFrame();
+          await nextFrame(); // 关键：每张卡之前让出主线程
+
+          // 如果这期间用户又切换了年份，本次构建作废
           if (gen !== buildGeneration) return;
 
           loadingText.textContent = '正在绘制 ' + (m + 1) + '/12 月…';
           progressFill.style.width = ((m / 12) * 100) + '%';
 
           const card = createMonthCard(year, m);
-          const col = m % COLS;
-          const row = Math.floor(m / COLS);
+          const col = m % COLS;          // 第几列（0~3）
+          const row = Math.floor(m / COLS); // 第几行（0~2）
 
+          // 网格布局：以场景原点为中心对称分布
+          // 列：0 → 最左，3 → 最右
+          // 行：0 → 最上，2 → 最下（y 坐标取负值）
           card.position.x = col * (CARD_W + GAP_X) - TOTAL_W / 2 + CARD_W / 2;
           card.position.y = -(row * (CARD_H + GAP_Y)) + TOTAL_H / 2 - CARD_H / 2;
           card.position.z = 0;
 
+          // 入场动画：初始缩放 0.92，animate 循环里缓动到 1
           card.scale.set(0.92, 0.92, 1);
           card.userData.targetScale = 1;
 
@@ -1163,6 +1522,15 @@
 
     // ============================================================
     // 15. 全屏 / 横屏
+    // ------------------------------------------------------------
+    // 【浏览器兼容性差异】
+    //   | 浏览器               | requestFullscreen | orientation.lock |
+    //   |----------------------|-------------------|------------------|
+    //   | Android Chrome       | ✅               | ✅                |
+    //   | iPad Safari 16.4+    | ✅               | ⚠️ 部分           |
+    //   | iPhone Safari        | ❌（需要前缀）    | ❌                |
+    //   | Firefox              | ✅               | ❌                |
+    // 因此所有调用都包 try/catch，失败时只提示文字，不影响日历本身使用。
     // ============================================================
     const fullscreenBtn = document.getElementById('fullscreenToggle');
     const rotateHint = document.getElementById('rotateHint');
@@ -1170,12 +1538,15 @@
     const rotateSkipBtn = document.getElementById('rotateSkipBtn');
     const rotateFeedback = document.getElementById('rotateFeedback');
 
+    // 用户点击"继续竖屏"后，本次会话不再自动弹竖屏提示
     let rotateHintDismissed = false;
 
+    // 不同浏览器用不同的属性名判断是否处于全屏
     function isFullscreenActive() {
       return !!(document.fullscreenElement || document.webkitFullscreenElement);
     }
 
+    // 全屏状态变化时同步按钮图标和提示文字
     function updateFullscreenIcon() {
       fullscreenBtn.textContent = isFullscreenActive() ? '⛉' : '⛶';
       fullscreenBtn.title = isFullscreenActive() ? '退出全屏' : '全屏';
@@ -1184,18 +1555,25 @@
     async function enterFullscreen() {
       try {
         const el = document.documentElement;
+        // 优先用标准 API，回退到 webkit 前缀（Safari）
         if (el.requestFullscreen) {
           await el.requestFullscreen();
         } else if (el.webkitRequestFullscreen) {
           await el.webkitRequestFullscreen();
         } else {
-          return false;
+          return false; // 都不支持
         }
+
+        // 尝试锁定横屏
+        // 【重要】orientation.lock 必须在全屏状态之后调用，
+        // 且必须是"用户手势回调"中（不能是 setTimeout 延迟触发）
         try {
           if (screen.orientation && screen.orientation.lock) {
             await screen.orientation.lock('landscape');
           }
-        } catch (e) {}
+        } catch (e) {
+          // iOS Safari / Firefox 不支持，静默失败
+        }
         return true;
       } catch (e) {
         return false;
@@ -1204,11 +1582,13 @@
 
     async function exitFullscreen() {
       try {
+        // 先解除横屏锁定，否则某些浏览器会拒绝退出全屏
         try {
           if (screen.orientation && screen.orientation.unlock) {
             screen.orientation.unlock();
           }
         } catch (e) {}
+
         if (document.exitFullscreen) await document.exitFullscreen();
         else if (document.webkitExitFullscreen) await document.webkitExitFullscreen();
         return true;
@@ -1220,14 +1600,18 @@
     async function toggleFullscreen() {
       if (isFullscreenActive()) await exitFullscreen();
       else await enterFullscreen();
+      // 全屏切换后浏览器需要 ~200ms 稳定新的视口尺寸，
+      // 直接调 onResize 会读到旧尺寸
       setTimeout(onResize, 200);
     }
 
     fullscreenBtn.onclick = toggleFullscreen;
 
+    // 用户按 ESC 或系统手势退出全屏时同步按钮状态
     document.addEventListener('fullscreenchange', updateFullscreenIcon);
     document.addEventListener('webkitfullscreenchange', updateFullscreenIcon);
 
+    // 竖屏提示遮罩上的"进入全屏横屏"按钮
     rotateActionBtn.onclick = async (e) => {
       e.stopPropagation();
       rotateFeedback.textContent = '正在进入全屏…';
@@ -1238,19 +1622,26 @@
         rotateFeedback.textContent = '';
         setTimeout(onResize, 200);
       } else {
+        // iOS 等不支持环境：提示用户手动旋转
         rotateFeedback.textContent = '当前浏览器不支持全屏，请手动旋转手机';
         setTimeout(() => { rotateFeedback.textContent = ''; }, 4000);
       }
     };
 
+    // "继续竖屏浏览"按钮
     rotateSkipBtn.onclick = (e) => {
       e.stopPropagation();
       rotateHint.style.display = 'none';
-      rotateHintDismissed = true;
+      rotateHintDismissed = true; // 本次会话不再自动弹
     };
 
     // ============================================================
     // 16. 字号调节 UI
+    // ------------------------------------------------------------
+    // 【拖动滑块时的性能技巧】
+    //   - input 事件：每拖动 1px 触发一次，只更新百分比数字
+    //   - change 事件：松手时触发一次，才真正重绘 12 张卡片
+    //   如果 input 里也重绘，拖 100px 就会重绘 100 次，必卡无疑。
     // ============================================================
     const fontToggleBtn = document.getElementById('fontToggle');
     const fontPanel = document.getElementById('fontPanel');
@@ -1268,6 +1659,7 @@
 
     function applyFontScale(newScale) {
       newScale = clampFontScale(newScale);
+      // 变化小于 0.1% 视为无变化，避免无意义重绘
       if (Math.abs(newScale - fontScale) < 0.001) {
         updateFontUI();
         return;
@@ -1279,16 +1671,19 @@
     }
 
     fontToggleBtn.onclick = (e) => {
+      // 阻止冒泡，否则会立即触发 document 上的"点击外部关闭面板"逻辑
       e.stopPropagation();
       fontPanel.classList.toggle('hidden');
     };
 
     fontSlider.addEventListener('input', () => {
+      // 拖动中：只改百分比文字，实时反馈
       const pct = parseInt(fontSlider.value, 10);
       fontPercent.textContent = pct + '%';
     });
 
     fontSlider.addEventListener('change', () => {
+      // 松手：真正应用
       const pct = parseInt(fontSlider.value, 10);
       applyFontScale(pct / 100);
     });
@@ -1297,10 +1692,11 @@
     fontPlus.onclick = () => applyFontScale(fontScale + 0.05);
     fontResetBtn.onclick = () => applyFontScale(DEFAULT_FONT_SCALE);
 
+    // 点击面板外部关闭字号面板
     document.addEventListener('click', (e) => {
-      if (fontPanel.classList.contains('hidden')) return;
-      if (fontPanel.contains(e.target)) return;
-      if (fontToggleBtn.contains(e.target)) return;
+      if (fontPanel.classList.contains('hidden')) return; // 已隐藏，无需处理
+      if (fontPanel.contains(e.target)) return;           // 点的是面板本身
+      if (fontToggleBtn.contains(e.target)) return;       // 点的是 Aa 按钮
       fontPanel.classList.add('hidden');
     });
 
@@ -1317,11 +1713,14 @@
     }
 
     function applyTheme(name) {
-      if (!THEMES[name]) name = 'dark';
+      if (!THEMES[name]) name = 'dark'; // 防御：非法的主题名
+
       currentThemeName = name;
       currentTheme = THEMES[name];
 
+      // DOM 层：切换 body 的 data-theme，触发 CSS 变量更新
       document.body.dataset.theme = name;
+      // 3D 层：更新场景背景色，重绘所有卡片
       scene.background.set(currentTheme.sceneBg);
 
       redrawAllCards();
@@ -1334,16 +1733,23 @@
       applyTheme(currentThemeName === 'dark' ? 'light' : 'dark');
     };
 
+    // 启动时同步初始状态
     updateThemeToggleIcon();
     scene.background.set(currentTheme.sceneBg);
 
     // ============================================================
-    // 18. 详情面板
+    // 18. 日期详情浮层
+    // ------------------------------------------------------------
+    // 用 DOM（而非 canvas）绘制浮层的好处：
+    //   - 文字排版灵活，可换行、可选中复制
+    //   - 内容多时高度自适应
+    //   - 不消耗 GPU 纹理
     // ============================================================
     const detailPanel = document.getElementById('detailPanel');
 
     function showDetail(year, month, day, clientX, clientY) {
       let html = '';
+      // 拼日期标题：2026年3月15日 星期日
       const date = new Date(year, month, day);
       const weekStr = WEEK_DAYS[date.getDay()];
       html += '<div class="d-date">' + year + '年' + (month + 1) + '月' + day + '日 星期' + weekStr + '</div>';
@@ -1353,6 +1759,7 @@
           const solar = SolarLib.fromYmd(year, month + 1, day);
           const lunar = solar.getLunar();
 
+          // 干支纪年/月/日 + 生肖
           const yearGZ = lunar.getYearInGanZhi();
           const monthGZ = lunar.getMonthInGanZhi();
           const dayGZ = lunar.getDayInGanZhi();
@@ -1363,15 +1770,18 @@
           html += '<div class="d-lunar">农历 ' + yearGZ + '年（' + zodiac + '）' + lunarMonth + '月' + lunarDay + '</div>';
           html += '<div class="d-ganzhi">' + yearGZ + '年 ' + monthGZ + '月 ' + dayGZ + '日</div>';
 
+          // 节气（若当天有）
           const jieQi = lunar.getJieQi();
           if (jieQi) html += '<div class="d-jieqi">节气：' + jieQi + '</div>';
 
+          // 节日（可能多个）
           const data = getDateData(year, month, day);
           if (data.festivals.length > 0) {
             const names = data.festivals.map((f) => f.name).join('、');
             html += '<div class="d-festivals">节日：' + names + '</div>';
           }
 
+          // 放假 / 调休
           const holidayStatus = getHolidayStatus(year, month, day);
           if (holidayStatus) {
             if (holidayStatus.isWork) {
@@ -1381,6 +1791,7 @@
             }
           }
 
+          // 宜忌（截断到 6 条，否则可能 20 条撑爆浮层）
           try {
             const yi = lunar.getDayYi();
             const ji = lunar.getDayJi();
@@ -1399,13 +1810,20 @@
 
     function positionDetail(clientX, clientY) {
       const rect = detailPanel.getBoundingClientRect();
-      const pad = 16;
+      const pad = 16; // 距离鼠标/手指的距离
+
+      // 默认在指针右下方
       let x = clientX + pad;
       let y = clientY + pad;
+
+      // 右/下边缘溢出检测：如果放不下就翻转到左侧/上方
       if (x + rect.width > window.innerWidth - 8) x = clientX - rect.width - pad;
       if (y + rect.height > window.innerHeight - 8) y = clientY - rect.height - pad;
+
+      // 翻转后可能又超出左/上边界，最后再钳制一次
       x = Math.max(8, x);
       y = Math.max(8, y);
+
       detailPanel.style.left = x + 'px';
       detailPanel.style.top = y + 'px';
     }
@@ -1415,7 +1833,19 @@
     }
 
     // ============================================================
-    // 19. 指针交互（点击检测 + 鼠标悬停）
+    // 19. 指针交互（点击 + 鼠标悬停）
+    // ------------------------------------------------------------
+    // 【为什么用 pointer 事件而不是分开处理 mouse/touch】
+    //   pointerdown/move/up 在鼠标、触摸、触控笔下都会触发，
+    //   并且带有 pointerType 字段可区分设备类型。
+    //   一套代码通吃三种输入源。
+    //
+    // 【状态机】
+    //   pointerDownInfo ≠ null      → 正处于"单指按下"状态
+    //   pointerDownInfo = null      → 空闲或已进入多指/拖动状态
+    //   isDragging = true           → 已判定为拖动，不触发点击
+    //   activePointers.size > 1     → 多指，立即取消点击
+    //   pinnedDetail = true         → 浮层已"钉住"，移到空白处也不隐藏
     // ============================================================
     const raycaster = new THREE.Raycaster();
     const pointerNDC = new THREE.Vector2();
@@ -1426,13 +1856,17 @@
     let currentHoverKey = '';
     let pinnedDetail = false;
 
+    // 屏幕坐标 → NDC → 射线 → 命中 hitbox 的数据
     function getHitAt(clientX, clientY) {
       const rect = canvasEl.getBoundingClientRect();
+      // 屏幕像素 → NDC(-1~1)
       pointerNDC.x = ((clientX - rect.left) / rect.width) * 2 - 1;
       pointerNDC.y = -((clientY - rect.top) / rect.height) * 2 + 1;
 
+      // 矩阵必须手动更新，否则异步场景变换时射线可能用旧矩阵
       scene.updateMatrixWorld();
       raycaster.setFromCamera(pointerNDC, camera);
+      // intersectObjects 返回按距离升序的命中数组
       const hits = raycaster.intersectObjects(hitboxes, false);
       if (hits.length > 0) return hits[0].object.userData;
       return null;
@@ -1441,9 +1875,11 @@
     canvasEl.addEventListener('pointerdown', (e) => {
       activePointers.add(e.pointerId);
       if (activePointers.size === 1) {
+        // 单指/单键按下，记录起点
         pointerDownInfo = { x: e.clientX, y: e.clientY };
         isDragging = false;
       } else {
+        // 多指按下：立即视为手势，取消点击判定
         pointerDownInfo = null;
         isDragging = true;
         currentHoverKey = '';
@@ -1451,6 +1887,7 @@
     });
 
     canvasEl.addEventListener('pointermove', (e) => {
+      // 拖动判定：移动超过 8px 即认为不是点击
       if (pointerDownInfo) {
         const dx = e.clientX - pointerDownInfo.x;
         const dy = e.clientY - pointerDownInfo.y;
@@ -1460,18 +1897,23 @@
         }
       }
 
+      // 鼠标悬停（桌面端才有 hover 概念，触摸设备没有）
       if (e.pointerType === 'mouse' && !isDragging && activePointers.size <= 1) {
         const hit = getHitAt(e.clientX, e.clientY);
         if (hit) {
           const key = hit.year + '-' + hit.month + '-' + hit.day;
           if (key !== currentHoverKey) {
+            // 换到新的日期，重新生成浮层内容
             currentHoverKey = key;
             showDetail(hit.year, hit.month, hit.day, e.clientX, e.clientY);
+            // hover 切换会取消"钉住"状态，恢复成跟随鼠标的浮动模式
             pinnedDetail = false;
           } else {
+            // 还在同一个日期上，只跟随鼠标移动浮层位置
             positionDetail(e.clientX, e.clientY);
           }
         } else {
+          // 鼠标移到空白处：如果是 hover 弹出（非钉住），就隐藏
           if (!pinnedDetail && currentHoverKey) {
             currentHoverKey = '';
             hideDetail();
@@ -1484,17 +1926,21 @@
       activePointers.delete(e.pointerId);
 
       if (pointerDownInfo && activePointers.size === 0) {
+        // 所有手指/鼠标都离开了，检查是否为点击
         const dx = e.clientX - pointerDownInfo.x;
         const dy = e.clientY - pointerDownInfo.y;
 
         if (Math.hypot(dx, dy) < 10) {
+          // 位移 < 10px：判定为点击
           const hit = getHitAt(e.clientX, e.clientY);
           if (hit) {
+            // 选中 + 弹出浮层 + 钉住（鼠标移开也不消失）
             setSelected(hit.year, hit.month, hit.day);
             currentHoverKey = hit.year + '-' + hit.month + '-' + hit.day;
             showDetail(hit.year, hit.month, hit.day, e.clientX, e.clientY);
             pinnedDetail = true;
           } else {
+            // 点击空白：取消选中，隐藏浮层
             clearSelection();
             currentHoverKey = '';
             hideDetail();
@@ -1506,11 +1952,13 @@
       }
     });
 
+    // 指针被系统中断（来电、手掌误触等）：清理状态
     canvasEl.addEventListener('pointercancel', (e) => {
       activePointers.delete(e.pointerId);
     });
 
     canvasEl.addEventListener('pointerleave', () => {
+      // 鼠标离开 canvas：非钉住的浮层自动隐藏
       if (activePointers.size === 0 && !pinnedDetail) {
         currentHoverKey = '';
         hideDetail();
@@ -1519,6 +1967,17 @@
 
     // ============================================================
     // 20. 动画循环
+    // ------------------------------------------------------------
+    // 每帧做三件事：
+    //   1. 同步缩放百分比标签
+    //   2. 卡片入场缓动
+    //   3. cameraControls.update + 渲染
+    //
+    // 【为什么缩放标签在这里同步】
+    //   因为缩放来源有三种：+/- 按钮、滚轮、双指手势，
+    //   每种都绑定对应事件的话容易遗漏。
+    //   直接在渲染循环里比对 camera.zoom 与上次值，
+    //   无论从哪里变化都会在一帧内同步，最可靠。
     // ============================================================
     const clock = new THREE.Clock();
     const zoomLabel = document.getElementById('zoomLabel');
@@ -1531,13 +1990,19 @@
 
     function animate() {
       requestAnimationFrame(animate);
-      const delta = clock.getDelta();
+      const delta = clock.getDelta(); // 距上一帧的时间（秒）
 
+      // ---- 1. 缩放标签同步 ----
+      // 阈值 0.0005 避免浮点噪声导致每帧都刷新 DOM
       if (Math.abs(camera.zoom - lastRenderedZoom) > 0.0005) {
         lastRenderedZoom = camera.zoom;
         updateZoomLabel();
       }
 
+      // ---- 2. 卡片入场缓动 ----
+      // 线性插值：当前值向目标值靠近 delta*8 比例
+      // delta*8 ≈ 0.13（60fps 下），即每帧走 13%，
+      // 大约 15 帧（250ms）到达 99%，视觉上是"轻轻弹出"的效果
       for (let i = 0; i < monthMeshes.length; i++) {
         const mesh = monthMeshes[i];
         const target = mesh.userData.targetScale || 1;
@@ -1546,11 +2011,16 @@
           const next = cur + (target - cur) * Math.min(delta * 8, 1);
           mesh.scale.set(next, next, 1);
         } else {
+          // 已经足够接近，直接到位（避免无限逼近永不等于）
           mesh.scale.set(target, target, 1);
         }
       }
 
+      // ---- 3. cameraControls.update ----
+      // 处理鼠标拖动的阻尼插值。如果没有调用这一行，
+      // 鼠标拖动将没有平滑效果，感觉像直接"跳"过去。
       cameraControls.update(delta);
+
       renderer.render(scene, camera);
     }
 
@@ -1579,6 +2049,10 @@
 
     // ============================================================
     // 22. 缩放按钮
+    // ------------------------------------------------------------
+    // 第二参数 true = 带动画（走 camera-controls 的 damping）
+    // 与手动触摸用的 applyCamera(…, false) 不同，
+    // 按钮点击是离散操作，有阻尼动画体验更好。
     // ============================================================
     document.getElementById('zoomIn').onclick = () => {
       const z = Math.min(camera.zoom * 1.4, cameraControls.maxZoom);
@@ -1591,12 +2065,19 @@
     };
 
     document.getElementById('zoomReset').onclick = () => {
+      // 相机回到原点 + 缩放回到初始值
       cameraControls.setLookAt(0, 0, 10, 0, 0, 0, true);
       cameraControls.zoomTo(baseZoom, true);
     };
 
     // ============================================================
-    // 23. 响应式
+    // 23. 响应式（尺寸变化处理）
+    // ------------------------------------------------------------
+    // 【为什么不能简单地重设 camera.zoom = baseZoom】
+    //   如果用户已经放大到 300% 再看某个月，
+    //   旋转屏幕后如果重置回 baseZoom，用户的视图就丢了。
+    //   正确做法：保持"当前缩放 / 初始缩放"的相对比例，
+    //   只重算 baseZoom 本身。
     // ============================================================
     function isTouchDevice() {
       return ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
@@ -1607,26 +2088,31 @@
       const h = window.innerHeight;
       aspect = w / h;
 
+      // ---- 1. 重算正交相机视锥 ----
       camera.left = (-FRUSTUM_SIZE * aspect) / 2;
       camera.right = (FRUSTUM_SIZE * aspect) / 2;
       camera.top = FRUSTUM_SIZE / 2;
       camera.bottom = -FRUSTUM_SIZE / 2;
       camera.updateProjectionMatrix();
 
+      // ---- 2. 同步渲染尺寸和像素比 ----
       renderer.setSize(w, h);
       renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
 
+      // ---- 3. 保持相对缩放比例 ----
       const newBaseZoom = computeBaseZoom();
-      const ratio = camera.zoom / baseZoom;
+      const ratio = camera.zoom / baseZoom; // 当前相对比例（如 3.0 = 300%）
       baseZoom = newBaseZoom;
-      camera.zoom = baseZoom * ratio;
+      camera.zoom = baseZoom * ratio;       // 新基准 × 旧比例 = 新绝对值
       camera.updateProjectionMatrix();
 
+      // ---- 4. 更新缩放上下限 ----
       cameraControls.minZoom = baseZoom / 3;
       cameraControls.maxZoom = baseZoom * 8;
       updateZoomLabel();
 
-      // 触摸设备竖屏时显示横屏提示
+      // ---- 5. 竖屏提示 ----
+      // 只在触摸设备 + 竖屏 + 窄屏 + 用户未主动关闭 时显示
       if (isTouchDevice() && h > w && w < 768 && !rotateHintDismissed) {
         rotateHint.style.display = 'flex';
       } else {
@@ -1635,6 +2121,9 @@
     }
 
     window.addEventListener('resize', onResize);
+
+    // orientationchange 触发时浏览器视口尺寸还没稳定，
+    // 等 300ms 后再读取 innerWidth/Height 才是新值
     window.addEventListener('orientationchange', () => {
       setTimeout(onResize, 300);
     });

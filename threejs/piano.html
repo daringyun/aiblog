@@ -15,7 +15,6 @@
   }
   canvas { display: block; touch-action: none; }
 
-  /* ---------- 顶部信息 ---------- */
   .hud {
     position: fixed; left: 22px; top: 18px;
     color: #cfd8e6; pointer-events: none;
@@ -32,7 +31,6 @@
     font-size: 11px; color: #e8eefc;
   }
 
-  /* ---------- 音名 / 力度条 ---------- */
   #note {
     position: fixed; left: 50%; bottom: 38px; transform: translateX(-50%);
     font-size: 46px; font-weight: 200; letter-spacing: 3px;
@@ -57,7 +55,6 @@
     transition: width .1s linear;
   }
 
-  /* ---------- 一键横屏按钮 ---------- */
   #fsBtn {
     position: fixed; right: 14px; top: 14px; z-index: 30;
     display: flex; align-items: center; gap: 6px;
@@ -77,12 +74,14 @@
   #fsBtn:active { transform: scale(.94); background: rgba(40, 70, 120, .82); }
   #fsBtn.hidden { display: none; }
 
-  /* ---------- 延音踏板按钮 ---------- */
-  #pedalBtn {
+  #ctrlStack {
     position: fixed; right: 16px; bottom: 20px; z-index: 30;
+    display: flex; flex-direction: column; gap: 10px; align-items: flex-end;
+  }
+  .ctrl-btn {
     padding: 11px 20px; border-radius: 999px;
     font-family: inherit;
-    font-size: 13px; font-weight: 700; letter-spacing: .8px;
+    font-size: 13px; font-weight: 700; letter-spacing: .6px;
     color: #b9cfe8;
     background: rgba(24, 34, 50, .78);
     border: 1px solid rgba(120, 160, 210, .26);
@@ -92,6 +91,16 @@
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
     transition: all .18s ease;
+    white-space: nowrap;
+  }
+  .ctrl-btn:active { transform: scale(.94); }
+
+  #dragBtn.on {
+    color: #07170e;
+    background: linear-gradient(135deg, #8effb2, #3fd97e);
+    border-color: rgba(160, 255, 205, .72);
+    box-shadow: 0 4px 22px rgba(60, 220, 120, .5),
+                inset 0 1px 0 rgba(255,255,255,.5);
   }
   #pedalBtn.on {
     color: #06121f;
@@ -100,9 +109,7 @@
     box-shadow: 0 4px 22px rgba(80, 170, 255, .55),
                 inset 0 1px 0 rgba(255,255,255,.5);
   }
-  #pedalBtn:active { transform: scale(.94); }
 
-  /* ---------- 请旋转手机提示 ---------- */
   #rotateHint {
     position: fixed; inset: 0; z-index: 40;
     display: flex; flex-direction: column;
@@ -125,21 +132,24 @@
     55%, 100% { transform: rotate(90deg); }
   }
 
-  /* ---------- 加载提示 ---------- */
   #loading {
-    position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+    position: fixed; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 14px;
     color: #5f6c80; font-size: 14px; letter-spacing: 1px; z-index: 50;
     background: #07090c; transition: opacity .4s ease;
+    padding: 24px; text-align: center; line-height: 1.8;
   }
+  #loading .tips { font-size: 12px; opacity: .55; max-width: 480px; }
+  #loading .tips b { color: #8fb6e8; font-weight: 600; }
 
-  /* ---------- 小屏 / 横屏适配 ---------- */
   @media (max-width: 700px), (max-height: 520px) {
     .hud { left: 12px; top: 10px; }
     .hud h1 { font-size: 13px; margin-bottom: 5px; }
     .hud p { font-size: 10px; line-height: 1.6; }
     .hud p:nth-of-type(n+3) { display: none; }
     #fsBtn { right: 10px; top: 10px; padding: 7px 12px; font-size: 12px; }
-    #pedalBtn { right: 10px; bottom: 12px; padding: 9px 15px; font-size: 12px; }
+    #ctrlStack { right: 10px; bottom: 12px; gap: 8px; }
+    .ctrl-btn { padding: 9px 15px; font-size: 12px; }
     #note { font-size: 30px; bottom: 18px; }
     #velbar { bottom: 62px; width: 120px; }
   }
@@ -147,13 +157,19 @@
 </head>
 <body>
 
-<div id="loading">正在加载 Three.js…</div>
+<div id="loading">
+  <div id="loadingMain">正在加载 Three.js…</div>
+  <div class="tips" id="loadingTips"></div>
+</div>
 
 <button id="fsBtn">
   <span id="fsIcon">⤢</span><span id="fsText">横屏</span>
 </button>
 
-<button id="pedalBtn" class="on">延音 ON</button>
+<div id="ctrlStack">
+  <button id="dragBtn" class="ctrl-btn on">拖拽 ON</button>
+  <button id="pedalBtn" class="ctrl-btn on">延音 ON</button>
+</div>
 
 <div id="rotateHint">
   <div class="rh-icon">📱</div>
@@ -175,839 +191,1002 @@
   </p>
   <p>
     移调 <kbd>[</kbd> <kbd>]</kbd> &nbsp;·&nbsp; 踏板 <kbd>空格</kbd>
+    &nbsp;·&nbsp; 左右移动 <kbd>←</kbd> <kbd>→</kbd>
     &nbsp;·&nbsp; 当前：<span id="octLabel">C4 – B5</span>
   </p>
-  <p>鼠标点击琴键（靠前力度大）· 按住滑动连奏 · 拖拽旋转 · 滚轮缩放</p>
+  <p>点击琴键（靠前力度大）· 关闭「拖拽」后视角锁定 · 双指或右键可平移</p>
 </div>
 
 <div id="note"></div>
 <div id="velbar"><div id="velfill"></div></div>
 <canvas id="c"></canvas>
 
-<script type="importmap">
-{
-  "imports": {
-    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+<script>
+/* ============ 动态加载 Three.js（多个 CDN 自动回退） ============ */
+(function loadThree() {
+  var mainEl = document.getElementById('loadingMain');
+  var tipsEl = document.getElementById('loadingTips');
+
+  var urls = [
+    "https://cdn.jsdelivr.net/npm/three@0.149.0/build/three.min.js",
+    "https://s4.zstatic.net/npm/three@0.149.0/build/three.min.js",
+    "https://unpkg.com/three@0.149.0/build/three.min.js"
+  ];
+  var i = 0;
+
+  function tryNext() {
+    if (i >= urls.length) {
+      mainEl.textContent = "Three.js 加载失败";
+      tipsEl.innerHTML =
+        "所有 CDN 均无法加载。<br>" +
+        "请确认页面以 <b>http://localhost</b> 打开（不能直接双击 HTML），<br>" +
+        "或将 three.min.js 下载到本地后改为 <b>./three.min.js</b>。";
+      return;
+    }
+    var s = document.createElement('script');
+    s.src = urls[i++];
+    s.onload = function () {
+      if (typeof THREE !== 'undefined') {
+        try {
+          startPiano();
+        } catch (err) {
+          mainEl.textContent = "初始化失败";
+          tipsEl.textContent = err.message;
+          console.error(err);
+        }
+      } else {
+        tryNext();
+      }
+    };
+    s.onerror = tryNext;
+    document.head.appendChild(s);
   }
-}
-</script>
+  tryNext();
+})();
 
-<script type="module">
-import * as THREE from 'three';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+function startPiano() {
+  'use strict';
 
-/* =========================================================
-   0. 工具函数（必须最先定义）
-   ========================================================= */
-const NOTE_NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
-const BLACK_PCS  = new Set([1, 3, 6, 8, 10]);
-
-const isBlackMidi = (m) => BLACK_PCS.has(m % 12);
-const noteName = (midi) =>
-  NOTE_NAMES[midi % 12] + (Math.floor(midi / 12) - 1);
-
-const clamp = THREE.MathUtils.clamp;
-
-/* =========================================================
-   1. 渲染器 / 场景 / 相机
-   ========================================================= */
-const canvas = document.getElementById('c');
-
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.12;
-
-const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x07090c);
-scene.fog = new THREE.FogExp2(0x07090c, 0.011);
-
-const camera = new THREE.PerspectiveCamera(42, window.innerWidth / window.innerHeight, 0.2, 400);
-
-const controls = new OrbitControls(camera, canvas);
-controls.target.set(0, 1.5, 0);
-controls.enableDamping = true;
-controls.dampingFactor = 0.075;
-controls.minDistance = 6;
-controls.maxDistance = 110;
-controls.maxPolarAngle = Math.PI * 0.49;
-controls.zoomSpeed = 0.9;
-
-let userMovedCamera = false;
-controls.addEventListener('start', () => { userMovedCamera = true; });
-
-/* =========================================================
-   2. 灯光
-   ========================================================= */
-scene.add(new THREE.HemisphereLight(0x9db8ff, 0x0a0c11, 0.8));
-
-const keyLight = new THREE.DirectionalLight(0xffffff, 2.3);
-keyLight.position.set(14, 28, 20);
-keyLight.castShadow = true;
-keyLight.shadow.mapSize.set(2048, 2048);
-keyLight.shadow.camera.left   = -20;
-keyLight.shadow.camera.right  =  20;
-keyLight.shadow.camera.top    =  20;
-keyLight.shadow.camera.bottom = -20;
-keyLight.shadow.camera.near   =  1;
-keyLight.shadow.camera.far    =  80;
-keyLight.shadow.bias = -0.0006;
-keyLight.shadow.normalBias = 0.03;
-scene.add(keyLight);
-
-const rimLight = new THREE.DirectionalLight(0x4d7dff, 1.4);
-rimLight.position.set(-16, 10, -14);
-scene.add(rimLight);
-
-const fillLight = new THREE.PointLight(0x66ccff, 30, 60, 2);
-fillLight.position.set(0, 9, 16);
-scene.add(fillLight);
-
-/* =========================================================
-   3. 键盘几何参数（88 键，A0 – C8）
-   ========================================================= */
-const MIDI_LOW  = 21;
-const MIDI_HIGH = 108;
-
-const WHITE_W   = 0.55;
-const WHITE_GAP = 0.028;
-const WHITE_H   = 0.42;
-const WHITE_LEN = 3.20;
-
-const BLACK_W   = WHITE_W * 0.58;
-const BLACK_H   = 0.38;
-const BLACK_LEN = WHITE_LEN * 0.62;
-
-const KEY_BASE_Y = 1.20;
-const KEY_BACK_Z = -1.60;
-const PIVOT_Z    = KEY_BACK_Z + 0.06;
-const WHITE_TOP  = KEY_BASE_Y + WHITE_H;
-const BLACK_BASE = WHITE_TOP + 0.004;
-const BLACK_TOP  = BLACK_BASE + BLACK_H;
-
-const PRESS_ANGLE = 0.092;
-
-const whiteIndexByMidi = new Map();
-{
-  let i = 0;
-  for (let m = MIDI_LOW; m <= MIDI_HIGH; m++) {
-    if (!isBlackMidi(m)) { whiteIndexByMidi.set(m, i); i++; }
-  }
-}
-const WHITE_COUNT = whiteIndexByMidi.size;
-const TOTAL_W     = WHITE_COUNT * WHITE_W;
-const START_X     = -(WHITE_COUNT - 1) / 2 * WHITE_W;
-
-/* =========================================================
-   4. 地面 & 琴身
-   ========================================================= */
-const floor = new THREE.Mesh(
-  new THREE.PlaneGeometry(200, 200),
-  new THREE.MeshStandardMaterial({ color: 0x10141a, roughness: 0.85, metalness: 0.15 })
-);
-floor.rotation.x = -Math.PI / 2;
-floor.position.y = -0.01;
-floor.receiveShadow = true;
-scene.add(floor);
-
-const body = new THREE.Mesh(
-  new THREE.BoxGeometry(TOTAL_W + 1.8, KEY_BASE_Y, 3.2),
-  new THREE.MeshStandardMaterial({ color: 0x161a22, roughness: 0.40, metalness: 0.60 })
-);
-body.position.set(0, KEY_BASE_Y / 2, KEY_BACK_Z - 1.6);
-body.castShadow = true;
-body.receiveShadow = true;
-scene.add(body);
-
-const shelf = new THREE.Mesh(
-  new THREE.BoxGeometry(TOTAL_W + 1.2, 0.14, WHITE_LEN + 0.6),
-  new THREE.MeshStandardMaterial({ color: 0x0d1117, roughness: 0.6, metalness: 0.35 })
-);
-shelf.position.set(0, KEY_BASE_Y - 0.07, KEY_BACK_Z + WHITE_LEN / 2);
-shelf.receiveShadow = true;
-scene.add(shelf);
-
-const strip = new THREE.Mesh(
-  new THREE.BoxGeometry(TOTAL_W + 1.4, 0.07, 0.45),
-  new THREE.MeshStandardMaterial({
-    color: 0x0e1218, emissive: 0x2a6cff, emissiveIntensity: 1.5,
-    roughness: 0.3, metalness: 0.7
-  })
-);
-strip.position.set(0, KEY_BASE_Y + 0.02, KEY_BACK_Z - 1.55);
-scene.add(strip);
-
-/* =========================================================
-   5. 创建 88 个琴键
-   ========================================================= */
-const keys = [];
-const keysByMidi = new Map();
-const pickMeshes = [];
-
-const whiteGeo = new THREE.BoxGeometry(WHITE_W - WHITE_GAP, WHITE_H, WHITE_LEN);
-const blackGeo = new THREE.BoxGeometry(BLACK_W, BLACK_H, BLACK_LEN);
-
-const whiteBaseMat = new THREE.MeshStandardMaterial({
-  color: 0xf7f7f4, roughness: 0.30, metalness: 0.03,
-  emissive: 0x5fb8ff, emissiveIntensity: 0
-});
-const blackBaseMat = new THREE.MeshStandardMaterial({
-  color: 0x13151a, roughness: 0.24, metalness: 0.30,
-  emissive: 0x3aa0ff, emissiveIntensity: 0
-});
-
-function createKey(midi, x, black) {
-  const h    = black ? BLACK_H   : WHITE_H;
-  const len  = black ? BLACK_LEN : WHITE_LEN;
-  const topY = black ? BLACK_TOP : WHITE_TOP;
-
-  const pivot = new THREE.Group();
-  pivot.position.set(x, topY, PIVOT_Z);
-
-  const mat = (black ? blackBaseMat : whiteBaseMat).clone();
-  const mesh = new THREE.Mesh(black ? blackGeo : whiteGeo, mat);
-
-  const centerZ = KEY_BACK_Z + len / 2;
-  mesh.position.set(0, -h / 2, centerZ - PIVOT_Z);
-  mesh.castShadow = true;
-  mesh.receiveShadow = true;
-
-  pivot.add(mesh);
-  scene.add(pivot);
-
-  const key = {
-    midi, x, black, pivot, mesh,
-    name: noteName(midi),
-    pressed: false,
-    angle: 0,
-    angVel: 0,
-    pressDepth: 1,
-    voice: null          // 当前发声的 voice
+  /* =========================================================
+     0. 工具函数
+     ========================================================= */
+  var NOTE_NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+  var BLACK_PCS  = new Set([1, 3, 6, 8, 10]);
+  var isBlackMidi = function (m) { return BLACK_PCS.has(m % 12); };
+  var noteName = function (midi) {
+    return NOTE_NAMES[midi % 12] + (Math.floor(midi / 12) - 1);
   };
+  var clamp = THREE.MathUtils.clamp;
 
-  mesh.userData.key = key;
+  /* =========================================================
+     1. 渲染器 / 场景 / 相机
+     ========================================================= */
+  var canvas = document.getElementById('c');
 
-  keys.push(key);
-  keysByMidi.set(midi, key);
-  pickMeshes.push(mesh);
-}
+  var renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.12;
+  if ('outputEncoding' in renderer) renderer.outputEncoding = THREE.sRGBEncoding;
 
-// 白键
-for (let m = MIDI_LOW; m <= MIDI_HIGH; m++) {
-  if (!isBlackMidi(m)) {
-    const i = whiteIndexByMidi.get(m);
-    createKey(m, START_X + i * WHITE_W, false);
+  // ▼ 关键修复：让光照强度语义与 r155+ 保持一致，避免画面发白
+  if ('physicallyCorrectLights' in renderer) {
+    renderer.physicallyCorrectLights = true;   // r149 及更早
+  } else if ('useLegacyLights' in renderer) {
+    renderer.useLegacyLights = false;          // r155+
   }
-}
 
-// 黑键（真实偏置）
-const BLACK_OFFSET = { 1: 1.09, 3: 1.09, 6: 1.10, 8: 1.10, 10: 1.09 };
-for (let m = MIDI_LOW; m <= MIDI_HIGH; m++) {
-  if (!isBlackMidi(m)) continue;
-  const lowerWhiteIdx = whiteIndexByMidi.get(m - 1);
-  const off = BLACK_OFFSET[m % 12];
-  createKey(m, START_X + (lowerWhiteIdx - 0.5 + off) * WHITE_W, true);
-}
+  var scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x07090c);
+  scene.fog = new THREE.FogExp2(0x07090c, 0.011);
 
-/* =========================================================
-   6. 相机自适应
-   ========================================================= */
-function fitCameraToKeyboard() {
-  const aspect = window.innerWidth / window.innerHeight;
-  const vFov = THREE.MathUtils.degToRad(camera.fov);
-  const needW = TOTAL_W + 2.2;
-  const distH = (needW / 2) / (Math.tan(vFov / 2) * Math.max(aspect, 0.25));
-  const dist = clamp(distH * 1.22, 18, 95);
+  var camera = new THREE.PerspectiveCamera(
+    42, window.innerWidth / window.innerHeight, 0.2, 400
+  );
 
-  camera.position.set(0, dist * 0.56, dist * 0.90);
-  controls.target.set(0, 1.5, 0);
-  controls.update();
-}
-fitCameraToKeyboard();
+  /* =========================================================
+     2. 灯光
+     ========================================================= */
+  scene.add(new THREE.HemisphereLight(0x9db8ff, 0x0a0c11, 0.8));
 
-/* =========================================================
-   7. 音频引擎（长延音 + 延音踏板）
-   ========================================================= */
-let audioCtx = null;
-let masterGain = null;
+  var keyLight = new THREE.DirectionalLight(0xffffff, 2.3);
+  keyLight.position.set(14, 28, 20);
+  keyLight.castShadow = true;
+  keyLight.shadow.mapSize.set(2048, 2048);
+  keyLight.shadow.camera.left   = -20;
+  keyLight.shadow.camera.right  =  20;
+  keyLight.shadow.camera.top    =  20;
+  keyLight.shadow.camera.bottom = -20;
+  keyLight.shadow.camera.near   =  1;
+  keyLight.shadow.camera.far    =  80;
+  keyLight.shadow.bias = -0.0006;
+  keyLight.shadow.normalBias = 0.03;
+  scene.add(keyLight);
 
-/** 正在发声的 voice 列表 */
-const activeVoicesList = [];
-const MAX_VOICES = 40;
+  var rimLight = new THREE.DirectionalLight(0x4d7dff, 1.4);
+  rimLight.position.set(-16, 10, -14);
+  scene.add(rimLight);
 
-/** 延音踏板状态，默认开启 */
-let sustainPedal = true;
+  // 物理光照模式下，点光源强度按坎德拉计算，保持与 r160 一致
+  var fillLight = new THREE.PointLight(0x66ccff, 30, 60, 2);
+  fillLight.position.set(0, 9, 16);
+  scene.add(fillLight);
 
-const PARTIALS = [
-  { r: 1,  g: 1.00, d: 1.00 },
-  { r: 2,  g: 0.46, d: 0.72 },
-  { r: 3,  g: 0.24, d: 0.54 },
-  { r: 4,  g: 0.14, d: 0.40 },
-  { r: 5,  g: 0.085, d: 0.31 },
-  { r: 6,  g: 0.055, d: 0.24 },
-  { r: 8,  g: 0.030, d: 0.18 },
-  { r: 11, g: 0.016, d: 0.13 }
-];
+  /* =========================================================
+     3. 键盘几何参数
+     ========================================================= */
+  var MIDI_LOW  = 21;
+  var MIDI_HIGH = 108;
 
-/**
- * 自然延音时长（秒）：从峰值指数衰减到 -80dB 所需时间
- * A0 ≈ 20s，C4 ≈ 7.6s，C8 ≈ 2.3s
- */
-function getSustainDuration(midi) {
-  const t = 20 * Math.pow(0.5, (midi - MIDI_LOW) / 28);
-  return clamp(t, 1.4, 22);
-}
+  var WHITE_W   = 0.55;
+  var WHITE_GAP = 0.028;
+  var WHITE_H   = 0.42;
+  var WHITE_LEN = 3.20;
 
-function makeImpulseResponse(seconds, decay) {
-  const rate = audioCtx.sampleRate;
-  const len = Math.floor(rate * seconds);
-  const buf = audioCtx.createBuffer(2, len, rate);
-  for (let ch = 0; ch < 2; ch++) {
-    const d = buf.getChannelData(ch);
-    for (let i = 0; i < len; i++) {
-      d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, decay);
+  var BLACK_W   = WHITE_W * 0.58;
+  var BLACK_H   = 0.38;
+  var BLACK_LEN = WHITE_LEN * 0.62;
+
+  var KEY_BASE_Y = 1.20;
+  var KEY_BACK_Z = -1.60;
+  var PIVOT_Z    = KEY_BACK_Z + 0.06;
+  var WHITE_TOP  = KEY_BASE_Y + WHITE_H;
+  var BLACK_BASE = WHITE_TOP + 0.004;
+  var BLACK_TOP  = BLACK_BASE + BLACK_H;
+
+  var PRESS_ANGLE = 0.092;
+
+  var whiteIndexByMidi = new Map();
+  (function () {
+    var i = 0;
+    for (var m = MIDI_LOW; m <= MIDI_HIGH; m++) {
+      if (!isBlackMidi(m)) { whiteIndexByMidi.set(m, i); i++; }
+    }
+  })();
+  var WHITE_COUNT = whiteIndexByMidi.size;
+  var TOTAL_W     = WHITE_COUNT * WHITE_W;
+  var START_X     = -(WHITE_COUNT - 1) / 2 * WHITE_W;
+
+  /* =========================================================
+     4. 地面 & 琴身
+     ========================================================= */
+  var floor = new THREE.Mesh(
+    new THREE.PlaneGeometry(200, 200),
+    new THREE.MeshStandardMaterial({ color: 0x10141a, roughness: 0.85, metalness: 0.15 })
+  );
+  floor.rotation.x = -Math.PI / 2;
+  floor.position.y = -0.01;
+  floor.receiveShadow = true;
+  scene.add(floor);
+
+  var body = new THREE.Mesh(
+    new THREE.BoxGeometry(TOTAL_W + 1.8, KEY_BASE_Y, 3.2),
+    new THREE.MeshStandardMaterial({ color: 0x161a22, roughness: 0.40, metalness: 0.60 })
+  );
+  body.position.set(0, KEY_BASE_Y / 2, KEY_BACK_Z - 1.6);
+  body.castShadow = true;
+  body.receiveShadow = true;
+  scene.add(body);
+
+  var shelf = new THREE.Mesh(
+    new THREE.BoxGeometry(TOTAL_W + 1.2, 0.14, WHITE_LEN + 0.6),
+    new THREE.MeshStandardMaterial({ color: 0x0d1117, roughness: 0.6, metalness: 0.35 })
+  );
+  shelf.position.set(0, KEY_BASE_Y - 0.07, KEY_BACK_Z + WHITE_LEN / 2);
+  shelf.receiveShadow = true;
+  scene.add(shelf);
+
+  var strip = new THREE.Mesh(
+    new THREE.BoxGeometry(TOTAL_W + 1.4, 0.07, 0.45),
+    new THREE.MeshStandardMaterial({
+      color: 0x0e1218, emissive: 0x2a6cff, emissiveIntensity: 1.5,
+      roughness: 0.3, metalness: 0.7
+    })
+  );
+  strip.position.set(0, KEY_BASE_Y + 0.02, KEY_BACK_Z - 1.55);
+  scene.add(strip);
+
+  /* =========================================================
+     5. 创建琴键
+     ========================================================= */
+  var keys = [];
+  var keysByMidi = new Map();
+  var pickMeshes = [];
+
+  var whiteGeo = new THREE.BoxGeometry(WHITE_W - WHITE_GAP, WHITE_H, WHITE_LEN);
+  var blackGeo = new THREE.BoxGeometry(BLACK_W, BLACK_H, BLACK_LEN);
+
+  var whiteBaseMat = new THREE.MeshStandardMaterial({
+    color: 0xf7f7f4, roughness: 0.30, metalness: 0.03,
+    emissive: 0x5fb8ff, emissiveIntensity: 0
+  });
+  var blackBaseMat = new THREE.MeshStandardMaterial({
+    color: 0x13151a, roughness: 0.24, metalness: 0.30,
+    emissive: 0x3aa0ff, emissiveIntensity: 0
+  });
+
+  function createKey(midi, x, black) {
+    var h    = black ? BLACK_H   : WHITE_H;
+    var len  = black ? BLACK_LEN : WHITE_LEN;
+    var topY = black ? BLACK_TOP : WHITE_TOP;
+
+    var pivot = new THREE.Group();
+    pivot.position.set(x, topY, PIVOT_Z);
+
+    var mat = (black ? blackBaseMat : whiteBaseMat).clone();
+    var mesh = new THREE.Mesh(black ? blackGeo : whiteGeo, mat);
+
+    var centerZ = KEY_BACK_Z + len / 2;
+    mesh.position.set(0, -h / 2, centerZ - PIVOT_Z);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+
+    pivot.add(mesh);
+    scene.add(pivot);
+
+    var key = {
+      midi: midi, x: x, black: black, pivot: pivot, mesh: mesh,
+      name: noteName(midi),
+      pressed: false,
+      angle: 0,
+      angVel: 0,
+      pressDepth: 1,
+      voice: null
+    };
+
+    mesh.userData.key = key;
+
+    keys.push(key);
+    keysByMidi.set(midi, key);
+    pickMeshes.push(mesh);
+  }
+
+  for (var mw = MIDI_LOW; mw <= MIDI_HIGH; mw++) {
+    if (!isBlackMidi(mw)) {
+      var iw = whiteIndexByMidi.get(mw);
+      createKey(mw, START_X + iw * WHITE_W, false);
     }
   }
-  return buf;
-}
 
-function ensureAudio() {
-  if (!audioCtx) {
-    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-
-    const compressor = audioCtx.createDynamicsCompressor();
-    compressor.threshold.value = -18;
-    compressor.knee.value = 26;
-    compressor.ratio.value = 5;
-    compressor.attack.value = 0.003;
-    compressor.release.value = 0.30;
-    compressor.connect(audioCtx.destination);
-
-    masterGain = audioCtx.createGain();
-    masterGain.gain.value = 0.85;
-
-    const convolver = audioCtx.createConvolver();
-    convolver.buffer = makeImpulseResponse(2.2, 2.2);
-    const wet = audioCtx.createGain();
-    wet.gain.value = 0.30;
-
-    masterGain.connect(compressor);
-    masterGain.connect(convolver);
-    convolver.connect(wet);
-    wet.connect(compressor);
-  }
-  if (audioCtx.state === 'suspended') audioCtx.resume();
-}
-
-/**
- * 播放一个音符，返回 voice 对象。
- * 声音在创建时就带有很长的自然衰减包络，松键后是否继续由踏板决定。
- */
-function playNote(midi, velocity = 0.85) {
-  ensureAudio();
-
-  // 声部数超限：快速释放最老的一个
-  if (activeVoicesList.length >= MAX_VOICES) {
-    const oldest = activeVoicesList.shift();
-    fastReleaseVoice(oldest);
+  var BLACK_OFFSET = { 1: 1.09, 3: 1.09, 6: 1.10, 8: 1.10, 10: 1.09 };
+  for (var mb = MIDI_LOW; mb <= MIDI_HIGH; mb++) {
+    if (!isBlackMidi(mb)) continue;
+    var lowerIdx = whiteIndexByMidi.get(mb - 1);
+    var off = BLACK_OFFSET[mb % 12];
+    createKey(mb, START_X + (lowerIdx - 0.5 + off) * WHITE_W, true);
   }
 
-  const ctx = audioCtx;
-  const t = ctx.currentTime + 0.001;
-
-  const v = clamp(velocity, 0.15, 1);
-  const freq = 440 * Math.pow(2, (midi - 69) / 12);
-  const sustainDur = getSustainDuration(midi);
-
-  const amp       = 0.045 + 0.175 * v;
-  const bright    = 0.25 + 0.75 * v;
-  const attackMul = 1.35 - 0.85 * v;
-
-  const bus = ctx.createGain();
-  bus.gain.value = amp;
-  bus.connect(masterGain);
-
-  const voice = {
-    midi,
-    bus,
-    oscs: [],
-    released: false,
-    stopped: false,
-    cleanupTimer: null
+  /* =========================================================
+     6. 相机控制器
+     ========================================================= */
+  var camState = {
+    theta: 0, phi: 1.05, radius: 40,
+    target: new THREE.Vector3(0, 1.5, 0),
+    thetaGoal: 0, phiGoal: 1.05, radiusGoal: 40,
+    targetGoal: new THREE.Vector3(0, 1.5, 0)
   };
 
-  const maxRatio = midi > 96 ? 4 : midi > 84 ? 6 : 11;
+  var PHI_MIN   = 0.12;
+  var PHI_MAX   = Math.PI * 0.47;
+  var DIST_MIN  = 6;
+  var DIST_MAX  = 110;
+  var PAN_LIMIT = TOTAL_W * 0.85;
 
-  for (const p of PARTIALS) {
-    if (p.r > maxRatio) continue;
+  var userMovedCamera = false;
+  var dragEnabled = true;
 
-    const osc = ctx.createOscillator();
-    osc.type = 'sine';
-    osc.frequency.value = freq * p.r;
-    osc.detune.value = (Math.random() - 0.5) * 5.5;
-
-    const g = ctx.createGain();
-    const dur    = Math.max(0.35, sustainDur * p.d);
-    const attack = (0.0035 + 0.011 / p.r) * attackMul;
-    const peak   = p.g * (p.r === 1 ? 1 : bright);
-
-    // attack → 长自然衰减（指数曲线，符合钢琴弦振动）
-    g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(Math.max(0.0004, peak), t + attack);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + attack + dur);
-
-    osc.connect(g);
-    g.connect(bus);
-
-    osc.start(t);
-    osc.stop(t + attack + dur + 0.1);
-
-    voice.oscs.push(osc);
+  function applyCamera() {
+    var sp = Math.sin(camState.phi);
+    var cp = Math.cos(camState.phi);
+    camera.position.set(
+      camState.target.x + camState.radius * sp * Math.sin(camState.theta),
+      camState.target.y + camState.radius * cp,
+      camState.target.z + camState.radius * sp * Math.cos(camState.theta)
+    );
+    camera.lookAt(camState.target);
+    camera.updateMatrixWorld();
   }
 
-  activeVoicesList.push(voice);
+  function fitCameraToKeyboard() {
+    var aspect = window.innerWidth / window.innerHeight;
+    var vFov = THREE.MathUtils.degToRad(camera.fov);
+    var needW = TOTAL_W + 2.2;
+    var distH = (needW / 2) / (Math.tan(vFov / 2) * Math.max(aspect, 0.25));
+    var radius = clamp(distH * 1.35, 16, 100);
 
-  // 自然结束后自动清理
-  voice.cleanupTimer = setTimeout(() => {
-    if (!voice.stopped) {
-      voice.stopped = true;
-      const idx = activeVoicesList.indexOf(voice);
+    camState.theta = camState.thetaGoal = 0;
+    camState.phi = camState.phiGoal = 1.05;
+    camState.radius = camState.radiusGoal = radius;
+    camState.target.set(0, 1.5, 0);
+    camState.targetGoal.set(0, 1.5, 0);
+    applyCamera();
+    userMovedCamera = false;
+  }
+  fitCameraToKeyboard();
+
+  /* =========================================================
+     7. 手势处理
+     ========================================================= */
+  var gesturePointers = new Map();
+  var pianoPointers   = new Map();
+  var gesture = null;
+
+  function startGesture() {
+    if (gesturePointers.size === 1) {
+      if (!dragEnabled) { gesture = null; return; }
+      var p = gesturePointers.values().next().value;
+      gesture = {
+        type: 'rotate',
+        startX: p.x, startY: p.y,
+        startTheta: camState.thetaGoal,
+        startPhi: camState.phiGoal
+      };
+    } else if (gesturePointers.size === 2) {
+      var it = gesturePointers.values();
+      var a = it.next().value;
+      var b = it.next().value;
+      var dist = Math.hypot(a.x - b.x, a.y - b.y);
+      gesture = {
+        type: 'pinch',
+        startDist: Math.max(dist, 1),
+        startRadius: camState.radiusGoal,
+        lastMidX: (a.x + b.x) / 2,
+        lastMidY: (a.y + b.y) / 2
+      };
+    } else {
+      gesture = null;
+    }
+  }
+
+  function panByScreen(dx, dy) {
+    if (dx === 0 && dy === 0) return;
+    var scale = camState.radius * 0.0016;
+    var right = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0);
+    var up    = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 1);
+    camState.targetGoal.addScaledVector(right, -dx * scale);
+    camState.targetGoal.addScaledVector(up,    dy * scale);
+    camState.targetGoal.x = clamp(camState.targetGoal.x, -PAN_LIMIT, PAN_LIMIT);
+    camState.targetGoal.y = clamp(camState.targetGoal.y, -4, 20);
+    camState.targetGoal.z = clamp(camState.targetGoal.z, -12, 12);
+    userMovedCamera = true;
+  }
+
+  function handleGestureMove() {
+    if (!gesture) return;
+
+    if (gesture.type === 'rotate') {
+      if (gesturePointers.size !== 1) return;
+      var p = gesturePointers.values().next().value;
+      var dx = p.x - gesture.startX;
+      var dy = p.y - gesture.startY;
+      var ROT_SPEED = 0.0045;
+      camState.thetaGoal = gesture.startTheta - dx * ROT_SPEED;
+      camState.phiGoal = clamp(gesture.startPhi - dy * ROT_SPEED, PHI_MIN, PHI_MAX);
+      userMovedCamera = true;
+    } else if (gesture.type === 'pinch') {
+      if (gesturePointers.size !== 2) return;
+      var it = gesturePointers.values();
+      var a = it.next().value;
+      var b = it.next().value;
+      var dist = Math.hypot(a.x - b.x, a.y - b.y);
+      var midX = (a.x + b.x) / 2;
+      var midY = (a.y + b.y) / 2;
+      var scale = gesture.startDist / Math.max(dist, 5);
+      camState.radiusGoal = clamp(gesture.startRadius * scale, DIST_MIN, DIST_MAX);
+      var ddx = midX - gesture.lastMidX;
+      var ddy = midY - gesture.lastMidY;
+      gesture.lastMidX = midX;
+      gesture.lastMidY = midY;
+      panByScreen(ddx, ddy);
+      userMovedCamera = true;
+    }
+  }
+
+  function onPointerDown(e) {
+    var hit = pickKey(e.clientX, e.clientY);
+    if (hit) {
+      e.stopImmediatePropagation();
+      e.preventDefault();
+      pianoPointers.set(e.pointerId, hit.key);
+      pressKey(hit.key, hit.velocity);
+      return;
+    }
+    gesturePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    startGesture();
+  }
+
+  function onPointerMove(e) {
+    if (pianoPointers.has(e.pointerId)) {
+      var oldKey = pianoPointers.get(e.pointerId);
+      var hit = pickKey(e.clientX, e.clientY);
+      var newKey = hit ? hit.key : null;
+      if (newKey !== oldKey) {
+        if (oldKey) releaseKey(oldKey);
+        if (newKey) {
+          pressKey(newKey, hit.velocity);
+          pianoPointers.set(e.pointerId, newKey);
+        } else {
+          pianoPointers.delete(e.pointerId);
+        }
+      }
+      return;
+    }
+    var gp = gesturePointers.get(e.pointerId);
+    if (gp) {
+      gp.x = e.clientX;
+      gp.y = e.clientY;
+      handleGestureMove();
+    }
+  }
+
+  function onPointerEnd(e) {
+    if (pianoPointers.has(e.pointerId)) {
+      releaseKey(pianoPointers.get(e.pointerId));
+      pianoPointers.delete(e.pointerId);
+    }
+    if (gesturePointers.has(e.pointerId)) {
+      gesturePointers.delete(e.pointerId);
+      if (gesturePointers.size >= 1) startGesture();
+      else gesture = null;
+    }
+  }
+
+  canvas.addEventListener('pointerdown', onPointerDown, true);
+  window.addEventListener('pointermove', onPointerMove, { passive: true });
+  window.addEventListener('pointerup', onPointerEnd);
+  window.addEventListener('pointercancel', onPointerEnd);
+
+  canvas.addEventListener('wheel', function (e) {
+    e.preventDefault();
+    var factor = Math.exp(e.deltaY * 0.0012);
+    camState.radiusGoal = clamp(camState.radiusGoal * factor, DIST_MIN, DIST_MAX);
+    userMovedCamera = true;
+  }, { passive: false });
+
+  /* =========================================================
+     8. 音频引擎
+     ========================================================= */
+  var audioCtx = null;
+  var masterGain = null;
+  var activeVoicesList = [];
+  var MAX_VOICES = 40;
+  var sustainPedal = true;
+
+  var PARTIALS = [
+    { r: 1,  g: 1.00, d: 1.00 },
+    { r: 2,  g: 0.46, d: 0.72 },
+    { r: 3,  g: 0.24, d: 0.54 },
+    { r: 4,  g: 0.14, d: 0.40 },
+    { r: 5,  g: 0.085, d: 0.31 },
+    { r: 6,  g: 0.055, d: 0.24 },
+    { r: 8,  g: 0.030, d: 0.18 },
+    { r: 11, g: 0.016, d: 0.13 }
+  ];
+
+  function getSustainDuration(midi) {
+    var t = 20 * Math.pow(0.5, (midi - MIDI_LOW) / 28);
+    return clamp(t, 1.4, 22);
+  }
+
+  function makeImpulseResponse(seconds, decay) {
+    var rate = audioCtx.sampleRate;
+    var len = Math.floor(rate * seconds);
+    var buf = audioCtx.createBuffer(2, len, rate);
+    for (var ch = 0; ch < 2; ch++) {
+      var d = buf.getChannelData(ch);
+      for (var i = 0; i < len; i++) {
+        d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, decay);
+      }
+    }
+    return buf;
+  }
+
+  function ensureAudio() {
+    if (!audioCtx) {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+      var compressor = audioCtx.createDynamicsCompressor();
+      compressor.threshold.value = -18;
+      compressor.knee.value = 26;
+      compressor.ratio.value = 5;
+      compressor.attack.value = 0.003;
+      compressor.release.value = 0.30;
+      compressor.connect(audioCtx.destination);
+
+      masterGain = audioCtx.createGain();
+      masterGain.gain.value = 0.85;
+
+      var convolver = audioCtx.createConvolver();
+      convolver.buffer = makeImpulseResponse(2.2, 2.2);
+      var wet = audioCtx.createGain();
+      wet.gain.value = 0.30;
+
+      masterGain.connect(compressor);
+      masterGain.connect(convolver);
+      convolver.connect(wet);
+      wet.connect(compressor);
+    }
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+  }
+
+  function playNote(midi, velocity) {
+    if (velocity === undefined) velocity = 0.85;
+    ensureAudio();
+
+    if (activeVoicesList.length >= MAX_VOICES) {
+      fastReleaseVoice(activeVoicesList.shift());
+    }
+
+    var ctx = audioCtx;
+    var t = ctx.currentTime + 0.001;
+    var v = clamp(velocity, 0.15, 1);
+    var freq = 440 * Math.pow(2, (midi - 69) / 12);
+    var sustainDur = getSustainDuration(midi);
+
+    var amp       = 0.045 + 0.175 * v;
+    var bright    = 0.25 + 0.75 * v;
+    var attackMul = 1.35 - 0.85 * v;
+
+    var bus = ctx.createGain();
+    bus.gain.value = amp;
+    bus.connect(masterGain);
+
+    var voice = {
+      midi: midi, bus: bus, oscs: [],
+      released: false, stopped: false,
+      cleanupTimer: null
+    };
+
+    var maxRatio = midi > 96 ? 4 : midi > 84 ? 6 : 11;
+
+    for (var pi = 0; pi < PARTIALS.length; pi++) {
+      var p = PARTIALS[pi];
+      if (p.r > maxRatio) continue;
+
+      var osc = ctx.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.value = freq * p.r;
+      osc.detune.value = (Math.random() - 0.5) * 5.5;
+
+      var g = ctx.createGain();
+      var dur    = Math.max(0.35, sustainDur * p.d);
+      var attack = (0.0035 + 0.011 / p.r) * attackMul;
+      var peak   = p.g * (p.r === 1 ? 1 : bright);
+
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(Math.max(0.0004, peak), t + attack);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + attack + dur);
+
+      osc.connect(g);
+      g.connect(bus);
+
+      osc.start(t);
+      osc.stop(t + attack + dur + 0.1);
+
+      voice.oscs.push(osc);
+    }
+
+    activeVoicesList.push(voice);
+
+    voice.cleanupTimer = setTimeout(function () {
+      if (!voice.stopped) {
+        voice.stopped = true;
+        var idx = activeVoicesList.indexOf(voice);
+        if (idx >= 0) activeVoicesList.splice(idx, 1);
+      }
+    }, (sustainDur + 0.8) * 1000);
+
+    return voice;
+  }
+
+  function fastReleaseVoice(voice) {
+    if (!voice || voice.stopped) return;
+    voice.stopped = true;
+    clearTimeout(voice.cleanupTimer);
+
+    if (audioCtx) {
+      var now = audioCtx.currentTime;
+      var release = 0.16;
+      try {
+        voice.bus.gain.cancelScheduledValues(now);
+        voice.bus.gain.setTargetAtTime(0, now, release / 3);
+      } catch (e) { /* 忽略 */ }
+      for (var i = 0; i < voice.oscs.length; i++) {
+        try { voice.oscs[i].stop(now + release + 0.05); } catch (e) { /* 已停止 */ }
+      }
+    }
+
+    setTimeout(function () {
+      var idx = activeVoicesList.indexOf(voice);
       if (idx >= 0) activeVoicesList.splice(idx, 1);
+    }, 280);
+  }
+
+  /* =========================================================
+     9. 按下 / 松开
+     ========================================================= */
+  var noteEl  = document.getElementById('note');
+  var velBar  = document.getElementById('velbar');
+  var velFill = document.getElementById('velfill');
+  var noteTimer = null, velTimer = null;
+
+  function flashNote(name, velocity) {
+    noteEl.textContent = name;
+    noteEl.classList.add('show');
+    clearTimeout(noteTimer);
+    noteTimer = setTimeout(function () { noteEl.classList.remove('show'); }, 460);
+
+    velBar.classList.add('show');
+    velFill.style.width = Math.round(velocity * 100) + '%';
+    clearTimeout(velTimer);
+    velTimer = setTimeout(function () { velBar.classList.remove('show'); }, 420);
+  }
+
+  function pressKey(key, velocity) {
+    if (!key || key.pressed) return;
+    if (velocity === undefined) velocity = 0.85;
+    key.pressed = true;
+    key.pressDepth = 0.82 + 0.28 * velocity;
+
+    if (key.voice && !key.voice.stopped) fastReleaseVoice(key.voice);
+
+    key.voice = playNote(key.midi, velocity);
+    flashNote(key.name, velocity);
+  }
+
+  function releaseKey(key) {
+    if (!key) return;
+    key.pressed = false;
+
+    var voice = key.voice;
+    if (!voice || voice.stopped) return;
+
+    if (sustainPedal) {
+      voice.released = true;
+    } else {
+      fastReleaseVoice(voice);
+      key.voice = null;
     }
-  }, (sustainDur + 0.8) * 1000);
+  }
 
-  return voice;
-}
+  /* =========================================================
+     10. 延音踏板
+     ========================================================= */
+  var pedalBtn = document.getElementById('pedalBtn');
 
-/**
- * 快速制音：约 0.16s 内把 voice 的音量拉到 0 并停止振荡器。
- * 对应踏板抬起或琴键松开（踏板关）时制音器落下的效果。
- */
-function fastReleaseVoice(voice) {
-  if (!voice || voice.stopped) return;
-  voice.stopped = true;
+  function setSustainPedal(on) {
+    sustainPedal = on;
+    pedalBtn.classList.toggle('on', on);
+    pedalBtn.textContent = on ? '延音 ON' : '延音 OFF';
 
-  clearTimeout(voice.cleanupTimer);
+    if (!on) {
+      for (var i = 0; i < activeVoicesList.length; i++) {
+        var v = activeVoicesList[i];
+        if (v.released && !v.stopped) fastReleaseVoice(v);
+      }
+    }
+  }
 
-  const ctx = audioCtx;
-  if (ctx) {
-    const now = ctx.currentTime;
-    const release = 0.16;
+  pedalBtn.addEventListener('click', function () {
+    setSustainPedal(!sustainPedal);
+    pedalBtn.blur();
+  });
+
+  /* =========================================================
+     11. 拖拽开关
+     ========================================================= */
+  var dragBtn = document.getElementById('dragBtn');
+
+  function setDragEnabled(on) {
+    dragEnabled = on;
+    if (!on && gesture && gesture.type === 'rotate') gesture = null;
+    dragBtn.classList.toggle('on', on);
+    dragBtn.textContent = on ? '拖拽 ON' : '拖拽 OFF';
+  }
+
+  dragBtn.addEventListener('click', function () {
+    setDragEnabled(!dragEnabled);
+    dragBtn.blur();
+  });
+  setDragEnabled(true);
+
+  /* =========================================================
+     12. 拾取
+     ========================================================= */
+  var raycaster = new THREE.Raycaster();
+  var ndc = new THREE.Vector2();
+
+  function pickKey(clientX, clientY) {
+    ndc.x = (clientX / window.innerWidth) * 2 - 1;
+    ndc.y = -(clientY / window.innerHeight) * 2 + 1;
+    raycaster.setFromCamera(ndc, camera);
+    var hits = raycaster.intersectObjects(pickMeshes, false);
+    if (!hits.length) return null;
+
+    var hit = hits[0];
+    var key = hit.object.userData.key;
+    var len = key.black ? BLACK_LEN : WHITE_LEN;
+    var t = clamp((hit.point.z - KEY_BACK_Z) / len, 0, 1);
+    var velocity = clamp(0.48 + 0.58 * Math.pow(t, 0.7), 0.48, 1);
+    return { key: key, velocity: velocity };
+  }
+
+  /* =========================================================
+     13. 键盘映射
+     ========================================================= */
+  var BASE_KEY_MAP = {
+    'z': 60, 's': 61, 'x': 62, 'd': 63, 'c': 64, 'v': 65, 'g': 66,
+    'b': 67, 'h': 68, 'n': 69, 'j': 70, 'm': 71,
+    'q': 72, '2': 73, 'w': 74, '3': 75, 'e': 76, 'r': 77, '5': 78,
+    't': 79, '6': 80, 'y': 81, '7': 82, 'u': 83
+  };
+
+  var octaveShift = 0;
+  var OCT_LABEL = document.getElementById('octLabel');
+
+  function updateOctaveLabel() {
+    if (!OCT_LABEL) return;
+    var lowMidi  = 60 + octaveShift * 12;
+    var highMidi = 83 + octaveShift * 12;
+    OCT_LABEL.textContent = noteName(lowMidi) + ' – ' + noteName(highMidi);
+  }
+  updateOctaveLabel();
+
+  var panKeys = { left: false, right: false };
+  var PAN_SPEED = 16;
+
+  window.addEventListener('keydown', function (e) {
+    if (e.code === 'Space') {
+      e.preventDefault();
+      if (!e.repeat) setSustainPedal(!sustainPedal);
+    }
+  }, true);
+
+  window.addEventListener('keydown', function (e) {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+
+    if (e.key === 'ArrowLeft')  { e.preventDefault(); panKeys.left = true;  return; }
+    if (e.key === 'ArrowRight') { e.preventDefault(); panKeys.right = true; return; }
+
+    if (e.key === '[') {
+      octaveShift = Math.max(-3, octaveShift - 1);
+      updateOctaveLabel(); e.preventDefault(); return;
+    }
+    if (e.key === ']') {
+      octaveShift = Math.min(2, octaveShift + 1);
+      updateOctaveLabel(); e.preventDefault(); return;
+    }
+
+    if (e.repeat) return;
+    var base = BASE_KEY_MAP[e.key.toLowerCase()];
+    if (base === undefined) return;
+
+    var key = keysByMidi.get(base + octaveShift * 12);
+    if (!key) return;
+
+    e.preventDefault();
+    pressKey(key, 0.86);
+  });
+
+  window.addEventListener('keyup', function (e) {
+    if (e.key === 'ArrowLeft')  { panKeys.left = false;  return; }
+    if (e.key === 'ArrowRight') { panKeys.right = false; return; }
+
+    var base = BASE_KEY_MAP[e.key.toLowerCase()];
+    if (base === undefined) return;
+    releaseKey(keysByMidi.get(base + octaveShift * 12));
+  });
+
+  window.addEventListener('blur', function () {
+    keys.forEach(function (k) { k.pressed = false; });
+    pianoPointers.forEach(function (k) { if (k) releaseKey(k); });
+    pianoPointers.clear();
+    gesturePointers.clear();
+    gesture = null;
+    panKeys.left = false;
+    panKeys.right = false;
+  });
+
+  /* =========================================================
+     14. 一键横屏
+     ========================================================= */
+  var fsBtn      = document.getElementById('fsBtn');
+  var fsIcon     = document.getElementById('fsIcon');
+  var fsText     = document.getElementById('fsText');
+  var rotateHint = document.getElementById('rotateHint');
+
+  var isTouchDevice = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+  var landscapeMode = false;
+
+  if (!isTouchDevice) fsBtn.classList.add('hidden');
+
+  var isLandscape = function () { return window.innerWidth > window.innerHeight; };
+
+  function updateFsBtn() {
+    if (landscapeMode) { fsIcon.textContent = '↺'; fsText.textContent = '退出横屏'; }
+    else               { fsIcon.textContent = '⤢'; fsText.textContent = '横屏'; }
+  }
+
+  var hintTimer = null;
+  function showRotateHint() {
+    rotateHint.classList.add('show');
+    clearTimeout(hintTimer);
+    hintTimer = setTimeout(hideRotateHint, 4200);
+  }
+  function hideRotateHint() {
+    rotateHint.classList.remove('show');
+    clearTimeout(hintTimer);
+  }
+  rotateHint.addEventListener('pointerdown', hideRotateHint);
+
+  function refitCameraAfterRotate(delay) {
+    if (delay === undefined) delay = 280;
+    setTimeout(function () {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      fitCameraToKeyboard();
+    }, delay);
+  }
+
+  async function enterLandscape() {
+    var el = document.documentElement;
+    try {
+      if (el.requestFullscreen) await el.requestFullscreen({ navigationUI: 'hide' });
+      else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+    } catch (err) { /* 忽略 */ }
+
+    var locked = false;
+    try {
+      if (screen.orientation && typeof screen.orientation.lock === 'function') {
+        await screen.orientation.lock('landscape');
+        locked = true;
+      } else if (typeof screen.lockOrientation === 'function') {
+        screen.lockOrientation('landscape');
+        locked = true;
+      }
+    } catch (err) { locked = false; }
+
+    landscapeMode = true;
+    updateFsBtn();
+    refitCameraAfterRotate();
+    if (!locked && !isLandscape()) showRotateHint();
+  }
+
+  async function exitLandscape() {
+    try {
+      if (screen.orientation && typeof screen.orientation.unlock === 'function') screen.orientation.unlock();
+      else if (typeof screen.unlockOrientation === 'function') screen.unlockOrientation();
+    } catch (err) { /* 忽略 */ }
 
     try {
-      voice.bus.gain.cancelScheduledValues(now);
-      // setTargetAtTime 从当前值指数逼近 0，无需读取当前值
-      voice.bus.gain.setTargetAtTime(0, now, release / 3);
-    } catch (e) { /* 忽略 */ }
+      if (document.fullscreenElement) await document.exitFullscreen();
+      else if (document.webkitFullscreenElement) document.webkitExitFullscreen();
+    } catch (err) { /* 忽略 */ }
 
-    for (const osc of voice.oscs) {
-      try { osc.stop(now + release + 0.05); } catch (e) { /* 已停止 */ }
+    landscapeMode = false;
+    updateFsBtn();
+    hideRotateHint();
+    refitCameraAfterRotate();
+  }
+
+  fsBtn.addEventListener('click', function () {
+    if (landscapeMode) exitLandscape();
+    else enterLandscape();
+  });
+
+  function syncFullscreenState() {
+    var fsEl = document.fullscreenElement || document.webkitFullscreenElement;
+    if (!fsEl && landscapeMode) {
+      landscapeMode = false;
+      updateFsBtn();
+      try {
+        if (screen.orientation && screen.orientation.unlock) screen.orientation.unlock();
+      } catch (err) { /* 忽略 */ }
     }
   }
+  document.addEventListener('fullscreenchange', syncFullscreenState);
+  document.addEventListener('webkitfullscreenchange', syncFullscreenState);
 
-  setTimeout(() => {
-    const idx = activeVoicesList.indexOf(voice);
-    if (idx >= 0) activeVoicesList.splice(idx, 1);
-  }, 280);
-}
-
-/* =========================================================
-   8. 按下 / 松开（结合踏板）
-   ========================================================= */
-const noteEl  = document.getElementById('note');
-const velBar  = document.getElementById('velbar');
-const velFill = document.getElementById('velfill');
-let noteTimer = null, velTimer = null;
-
-function flashNote(name, velocity) {
-  noteEl.textContent = name;
-  noteEl.classList.add('show');
-  clearTimeout(noteTimer);
-  noteTimer = setTimeout(() => noteEl.classList.remove('show'), 460);
-
-  velBar.classList.add('show');
-  velFill.style.width = Math.round(velocity * 100) + '%';
-  clearTimeout(velTimer);
-  velTimer = setTimeout(() => velBar.classList.remove('show'), 420);
-}
-
-function pressKey(key, velocity = 0.85) {
-  if (!key || key.pressed) return;
-  key.pressed = true;
-  key.pressDepth = 0.82 + 0.28 * velocity;
-
-  // 同一个键之前的声音若还在响（踏板开着），先快速淡出避免叠加
-  if (key.voice && !key.voice.stopped) {
-    fastReleaseVoice(key.voice);
+  if (screen.orientation && screen.orientation.addEventListener) {
+    screen.orientation.addEventListener('change', function () {
+      if (isLandscape()) hideRotateHint();
+      refitCameraAfterRotate(200);
+    });
   }
+  window.addEventListener('orientationchange', function () {
+    setTimeout(function () {
+      if (isLandscape()) hideRotateHint();
+      refitCameraAfterRotate(60);
+    }, 320);
+  });
 
-  key.voice = playNote(key.midi, velocity);
-  flashNote(key.name, velocity);
-}
+  /* =========================================================
+     15. 动画循环
+     ========================================================= */
+  var clock = new THREE.Clock();
+  var SUBSTEPS = 4;
 
-function releaseKey(key) {
-  if (!key) return;
-  key.pressed = false;
+  function animate() {
+    requestAnimationFrame(animate);
 
-  const voice = key.voice;
-  if (!voice || voice.stopped) return;
+    var dt = Math.min(clock.getDelta(), 0.05);
+    var h = dt / SUBSTEPS;
 
-  if (sustainPedal) {
-    // 踏板开启：制音器不落下，让弦自然衰减继续
-    voice.released = true;
-  } else {
-    // 踏板关闭：制音器立即落下
-    fastReleaseVoice(voice);
-    key.voice = null;
-  }
-}
+    for (var ki = 0; ki < keys.length; ki++) {
+      var k = keys[ki];
+      var target  = k.pressed ? PRESS_ANGLE * k.pressDepth : 0;
+      var stiff   = k.pressed ? 1500 : 700;
+      var damping = k.pressed ? 58 : 34;
 
-/* =========================================================
-   9. 延音踏板 UI 与逻辑
-   ========================================================= */
-const pedalBtn = document.getElementById('pedalBtn');
+      for (var s = 0; s < SUBSTEPS; s++) {
+        var acc = (target - k.angle) * stiff - k.angVel * damping;
+        k.angVel += acc * h;
+        k.angle  += k.angVel * h;
 
-function setSustainPedal(on) {
-  sustainPedal = on;
-  pedalBtn.classList.toggle('on', on);
-  pedalBtn.textContent = on ? '延音 ON' : '延音 OFF';
+        if (k.angle > target + 0.018) { k.angle = target + 0.018; if (k.angVel > 0) k.angVel = 0; }
+        if (k.angle < -0.007)         { k.angle = -0.007;         if (k.angVel < 0) k.angVel = 0; }
+      }
 
-  if (!on) {
-    // 踏板抬起：所有已松键但仍在响的音，制音器落下
-    for (const v of [...activeVoicesList]) {
-      if (v.released && !v.stopped) fastReleaseVoice(v);
+      k.pivot.rotation.x = k.angle;
+      var g = clamp(k.angle / PRESS_ANGLE, 0, 1);
+      k.mesh.material.emissiveIntensity = g * (k.black ? 1.35 : 0.62);
     }
-  }
-}
 
-pedalBtn.addEventListener('click', () => {
-  setSustainPedal(!sustainPedal);
-  pedalBtn.blur();
-});
+    var dir = 0;
+    if (panKeys.left)  dir -= 1;
+    if (panKeys.right) dir += 1;
+    if (dir !== 0) {
+      camState.targetGoal.x = clamp(
+        camState.targetGoal.x + dir * PAN_SPEED * dt,
+        -PAN_LIMIT, PAN_LIMIT
+      );
+      userMovedCamera = true;
+    }
 
-// 空格键切换踏板（捕获阶段，确保优先处理并阻止按钮默认激活）
-window.addEventListener('keydown', (e) => {
-  if (e.code === 'Space') {
-    e.preventDefault();
-    if (!e.repeat) setSustainPedal(!sustainPedal);
-  }
-}, true);
+    var dk = Math.min(1, dt * 12);
+    camState.theta  += (camState.thetaGoal  - camState.theta)  * dk;
+    camState.phi    += (camState.phiGoal    - camState.phi)    * dk;
+    camState.radius += (camState.radiusGoal - camState.radius) * dk;
+    camState.target.lerp(camState.targetGoal, dk);
+    applyCamera();
 
-/* =========================================================
-   10. 鼠标 / 触摸：拾取 + 力度 + 滑动连奏
-   ========================================================= */
-const raycaster = new THREE.Raycaster();
-const ndc = new THREE.Vector2();
+    var t = clock.elapsedTime;
+    fillLight.intensity = 26 + Math.sin(t * 1.3) * 5;
+    strip.material.emissiveIntensity = 1.35 + Math.sin(t * 1.9) * 0.3;
 
-function pickKey(clientX, clientY) {
-  ndc.x = (clientX / window.innerWidth) * 2 - 1;
-  ndc.y = -(clientY / window.innerHeight) * 2 + 1;
-  raycaster.setFromCamera(ndc, camera);
-  const hits = raycaster.intersectObjects(pickMeshes, false);
-  if (!hits.length) return null;
-
-  const hit = hits[0];
-  const key = hit.object.userData.key;
-
-  const len = key.black ? BLACK_LEN : WHITE_LEN;
-  const t = clamp((hit.point.z - KEY_BACK_Z) / len, 0, 1);
-  const velocity = clamp(0.48 + 0.58 * Math.pow(t, 0.7), 0.48, 1);
-
-  return { key, velocity };
-}
-
-let pointerKey = null;
-let pointerPlaying = false;
-
-canvas.addEventListener('pointerdown', (e) => {
-  if (pointerPlaying) return;
-
-  const hit = pickKey(e.clientX, e.clientY);
-  if (!hit) return;
-
-  e.stopImmediatePropagation();
-  e.preventDefault();
-
-  pointerPlaying = true;
-  pointerKey = hit.key;
-  pressKey(hit.key, hit.velocity);
-}, true);
-
-window.addEventListener('pointermove', (e) => {
-  if (!pointerPlaying) return;
-  const hit = pickKey(e.clientX, e.clientY);
-  const k = hit ? hit.key : null;
-
-  if (k !== pointerKey) {
-    if (pointerKey) releaseKey(pointerKey);
-    if (k) pressKey(k, hit.velocity);
-    pointerKey = k;
-  }
-}, { passive: true });
-
-function endPointer() {
-  if (pointerKey) releaseKey(pointerKey);
-  pointerKey = null;
-  pointerPlaying = false;
-}
-window.addEventListener('pointerup', endPointer);
-window.addEventListener('pointercancel', endPointer);
-
-/* =========================================================
-   11. 电脑键盘映射（可移调）
-   ========================================================= */
-const BASE_KEY_MAP = {
-  'z': 60, 's': 61, 'x': 62, 'd': 63, 'c': 64, 'v': 65, 'g': 66,
-  'b': 67, 'h': 68, 'n': 69, 'j': 70, 'm': 71,
-  'q': 72, '2': 73, 'w': 74, '3': 75, 'e': 76, 'r': 77, '5': 78,
-  't': 79, '6': 80, 'y': 81, '7': 82, 'u': 83
-};
-
-let octaveShift = 0;
-const OCT_LABEL = document.getElementById('octLabel');
-
-function updateOctaveLabel() {
-  const lowMidi  = 60 + octaveShift * 12;
-  const highMidi = 83 + octaveShift * 12;
-  OCT_LABEL.textContent = `${noteName(lowMidi)} – ${noteName(highMidi)}`;
-}
-updateOctaveLabel();
-
-window.addEventListener('keydown', (e) => {
-  if (e.metaKey || e.ctrlKey || e.altKey) return;
-
-  if (e.key === '[') {
-    octaveShift = Math.max(-3, octaveShift - 1);
-    updateOctaveLabel(); e.preventDefault(); return;
-  }
-  if (e.key === ']') {
-    octaveShift = Math.min(2, octaveShift + 1);
-    updateOctaveLabel(); e.preventDefault(); return;
+    renderer.render(scene, camera);
   }
 
-  if (e.repeat) return;
-  const base = BASE_KEY_MAP[e.key.toLowerCase()];
-  if (base === undefined) return;
-
-  const key = keysByMidi.get(base + octaveShift * 12);
-  if (!key) return;
-
-  e.preventDefault();
-  pressKey(key, 0.86);
-});
-
-window.addEventListener('keyup', (e) => {
-  const base = BASE_KEY_MAP[e.key.toLowerCase()];
-  if (base === undefined) return;
-  releaseKey(keysByMidi.get(base + octaveShift * 12));
-});
-
-window.addEventListener('blur', () => {
-  keys.forEach(k => (k.pressed = false));
-  endPointer();
-});
-
-/* =========================================================
-   12. 一键横屏
-   ========================================================= */
-const fsBtn      = document.getElementById('fsBtn');
-const fsIcon     = document.getElementById('fsIcon');
-const fsText     = document.getElementById('fsText');
-const rotateHint = document.getElementById('rotateHint');
-
-const isTouchDevice =
-  ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
-
-let landscapeMode = false;
-
-if (!isTouchDevice) fsBtn.classList.add('hidden');
-
-const isLandscape = () => window.innerWidth > window.innerHeight;
-
-function updateFsBtn() {
-  if (landscapeMode) {
-    fsIcon.textContent = '↺';
-    fsText.textContent = '退出横屏';
-  } else {
-    fsIcon.textContent = '⤢';
-    fsText.textContent = '横屏';
+  var loadingEl = document.getElementById('loading');
+  if (loadingEl) {
+    loadingEl.style.opacity = '0';
+    setTimeout(function () { loadingEl.remove(); }, 450);
   }
-}
 
-let hintTimer = null;
-function showRotateHint() {
-  rotateHint.classList.add('show');
-  clearTimeout(hintTimer);
-  hintTimer = setTimeout(hideRotateHint, 4200);
-}
-function hideRotateHint() {
-  rotateHint.classList.remove('show');
-  clearTimeout(hintTimer);
-}
-rotateHint.addEventListener('pointerdown', hideRotateHint);
+  animate();
 
-function refitCameraAfterRotate(delay = 280) {
-  setTimeout(() => {
+  /* =========================================================
+     16. 窗口尺寸变化
+     ========================================================= */
+  var resizeTimer = null;
+  window.addEventListener('resize', function () {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    fitCameraToKeyboard();
-    userMovedCamera = false;
-  }, delay);
-}
 
-async function enterLandscape() {
-  const el = document.documentElement;
-
-  try {
-    if (el.requestFullscreen) {
-      await el.requestFullscreen({ navigationUI: 'hide' });
-    } else if (el.webkitRequestFullscreen) {
-      el.webkitRequestFullscreen();
-    }
-  } catch (err) { /* 忽略 */ }
-
-  let locked = false;
-  try {
-    if (screen.orientation && typeof screen.orientation.lock === 'function') {
-      await screen.orientation.lock('landscape');
-      locked = true;
-    } else if (typeof screen.lockOrientation === 'function') {
-      screen.lockOrientation('landscape');
-      locked = true;
-    }
-  } catch (err) { locked = false; }
-
-  landscapeMode = true;
-  updateFsBtn();
-  refitCameraAfterRotate();
-
-  if (!locked && !isLandscape()) showRotateHint();
-}
-
-async function exitLandscape() {
-  try {
-    if (screen.orientation && typeof screen.orientation.unlock === 'function') {
-      screen.orientation.unlock();
-    } else if (typeof screen.unlockOrientation === 'function') {
-      screen.unlockOrientation();
-    }
-  } catch (err) { /* 忽略 */ }
-
-  try {
-    if (document.fullscreenElement) {
-      await document.exitFullscreen();
-    } else if (document.webkitFullscreenElement) {
-      document.webkitExitFullscreen();
-    }
-  } catch (err) { /* 忽略 */ }
-
-  landscapeMode = false;
-  updateFsBtn();
-  hideRotateHint();
-  refitCameraAfterRotate();
-}
-
-fsBtn.addEventListener('click', () => {
-  if (landscapeMode) exitLandscape();
-  else enterLandscape();
-});
-
-function syncFullscreenState() {
-  const fsEl = document.fullscreenElement || document.webkitFullscreenElement;
-  if (!fsEl && landscapeMode) {
-    landscapeMode = false;
-    updateFsBtn();
-    try {
-      if (screen.orientation && screen.orientation.unlock) screen.orientation.unlock();
-    } catch (err) { /* 忽略 */ }
-  }
-}
-document.addEventListener('fullscreenchange', syncFullscreenState);
-document.addEventListener('webkitfullscreenchange', syncFullscreenState);
-
-if (screen.orientation && screen.orientation.addEventListener) {
-  screen.orientation.addEventListener('change', () => {
-    if (isLandscape()) hideRotateHint();
-    refitCameraAfterRotate(200);
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(function () {
+      if (!userMovedCamera) fitCameraToKeyboard();
+      if (isLandscape()) hideRotateHint();
+    }, 180);
   });
 }
-window.addEventListener('orientationchange', () => {
-  setTimeout(() => {
-    if (isLandscape()) hideRotateHint();
-    refitCameraAfterRotate(60);
-  }, 320);
-});
-
-/* =========================================================
-   13. 动画循环（重锤弹簧物理）
-   ========================================================= */
-const clock = new THREE.Clock();
-const SUBSTEPS = 4;
-
-function animate() {
-  requestAnimationFrame(animate);
-
-  const dt = Math.min(clock.getDelta(), 0.05);
-  const h = dt / SUBSTEPS;
-
-  for (const k of keys) {
-    const target  = k.pressed ? PRESS_ANGLE * k.pressDepth : 0;
-    const stiff   = k.pressed ? 1500 : 700;
-    const damping = k.pressed ? 58 : 34;
-
-    for (let s = 0; s < SUBSTEPS; s++) {
-      const acc = (target - k.angle) * stiff - k.angVel * damping;
-      k.angVel += acc * h;
-      k.angle  += k.angVel * h;
-
-      if (k.angle > target + 0.018) { k.angle = target + 0.018; if (k.angVel > 0) k.angVel = 0; }
-      if (k.angle < -0.007)         { k.angle = -0.007;         if (k.angVel < 0) k.angVel = 0; }
-    }
-
-    k.pivot.rotation.x = k.angle;
-
-    const g = clamp(k.angle / PRESS_ANGLE, 0, 1);
-    k.mesh.material.emissiveIntensity = g * (k.black ? 1.35 : 0.62);
-  }
-
-  const t = clock.elapsedTime;
-  fillLight.intensity = 26 + Math.sin(t * 1.3) * 5;
-  strip.material.emissiveIntensity = 1.35 + Math.sin(t * 1.9) * 0.3;
-
-  controls.update();
-  renderer.render(scene, camera);
-}
-
-const loadingEl = document.getElementById('loading');
-if (loadingEl) {
-  loadingEl.style.opacity = '0';
-  setTimeout(() => loadingEl.remove(), 450);
-}
-
-animate();
-
-/* =========================================================
-   14. 窗口尺寸变化
-   ========================================================= */
-let resizeTimer = null;
-window.addEventListener('resize', () => {
-  camera.aspect = window.innerWidth / window.innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-
-  clearTimeout(resizeTimer);
-  resizeTimer = setTimeout(() => {
-    if (!userMovedCamera) fitCameraToKeyboard();
-    if (isLandscape()) hideRotateHint();
-  }, 180);
-});
 </script>
 </body>
 </html>

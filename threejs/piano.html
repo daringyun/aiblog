@@ -2,7 +2,9 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8" />
+<!-- 移动端视口：禁止用户缩放，适配刘海屏 -->
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+<!-- 允许 iOS 添加到主屏后全屏运行 -->
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <title>Three.js 88键重锤钢琴</title>
 <style>
@@ -11,13 +13,16 @@
   body {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
                  "Microsoft YaHei", sans-serif;
+    /* 禁止长按选中文字，避免触屏弹菜单 */
     -webkit-user-select: none; user-select: none;
   }
+  /* touch-action: none 阻止浏览器默认触摸手势（滚动、缩放），全部交给 JS 处理 */
   canvas { display: block; touch-action: none; }
 
+  /* ---------- 左上角操作提示 ---------- */
   .hud {
     position: fixed; left: 22px; top: 18px;
-    color: #cfd8e6; pointer-events: none;
+    color: #cfd8e6; pointer-events: none; /* 不阻挡鼠标事件 */
     text-shadow: 0 2px 14px rgba(0, 0, 0, .9);
   }
   .hud h1 { font-size: 17px; margin: 0 0 9px; font-weight: 600; letter-spacing: .5px; }
@@ -31,6 +36,7 @@
     font-size: 11px; color: #e8eefc;
   }
 
+  /* ---------- 屏幕底部音名显示 ---------- */
   #note {
     position: fixed; left: 50%; bottom: 38px; transform: translateX(-50%);
     font-size: 46px; font-weight: 200; letter-spacing: 3px;
@@ -41,6 +47,7 @@
   }
   #note.show { opacity: .92; }
 
+  /* ---------- 力度条 ---------- */
   #velbar {
     position: fixed; left: 50%; bottom: 96px; transform: translateX(-50%);
     width: 160px; height: 4px; border-radius: 2px;
@@ -55,6 +62,7 @@
     transition: width .1s linear;
   }
 
+  /* ---------- 右上角横屏按钮（仅触摸设备显示） ---------- */
   #fsBtn {
     position: fixed; right: 14px; top: 14px; z-index: 30;
     display: flex; align-items: center; gap: 6px;
@@ -74,7 +82,7 @@
   #fsBtn:active { transform: scale(.94); background: rgba(40, 70, 120, .82); }
   #fsBtn.hidden { display: none; }
 
-  /* ---------- 左下角：左右移动按钮 ---------- */
+  /* ---------- 左下角：左右移动按钮（手机端主要靠这个平移） ---------- */
   #panCtrl {
     position: fixed; left: 16px; bottom: 20px; z-index: 30;
     display: flex; gap: 8px;
@@ -93,9 +101,10 @@
     box-shadow: 0 6px 24px rgba(0,0,0,.5);
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
-    touch-action: none;
+    touch-action: none; /* 防止按住时页面滚动 */
     transition: all .15s ease;
   }
+  /* 按下状态：高亮为蓝色渐变 */
   .pan-btn.pressed {
     color: #06121f;
     background: linear-gradient(135deg, #8fdcff, #4d8fff);
@@ -127,6 +136,7 @@
   }
   .ctrl-btn:active { transform: scale(.94); }
 
+  /* 拖拽开启：绿色 */
   #dragBtn.on {
     color: #07170e;
     background: linear-gradient(135deg, #8effb2, #3fd97e);
@@ -134,6 +144,7 @@
     box-shadow: 0 4px 22px rgba(60, 220, 120, .5),
                 inset 0 1px 0 rgba(255,255,255,.5);
   }
+  /* 延音开启：蓝色 */
   #pedalBtn.on {
     color: #06121f;
     background: linear-gradient(135deg, #8fdcff, #4d8fff);
@@ -142,6 +153,7 @@
                 inset 0 1px 0 rgba(255,255,255,.5);
   }
 
+  /* ---------- 请旋转手机提示（iOS 不支持方向锁定时显示） ---------- */
   #rotateHint {
     position: fixed; inset: 0; z-index: 40;
     display: flex; flex-direction: column;
@@ -164,6 +176,7 @@
     55%, 100% { transform: rotate(90deg); }
   }
 
+  /* ---------- 加载提示 ---------- */
   #loading {
     position: fixed; inset: 0; display: flex; flex-direction: column;
     align-items: center; justify-content: center; gap: 14px;
@@ -174,11 +187,12 @@
   #loading .tips { font-size: 12px; opacity: .55; max-width: 480px; }
   #loading .tips b { color: #8fb6e8; font-weight: 600; }
 
+  /* ---------- 小屏 / 横屏适配 ---------- */
   @media (max-width: 700px), (max-height: 520px) {
     .hud { left: 12px; top: 10px; }
     .hud h1 { font-size: 13px; margin-bottom: 5px; }
     .hud p { font-size: 10px; line-height: 1.6; }
-    .hud p:nth-of-type(n+3) { display: none; }
+    .hud p:nth-of-type(n+3) { display: none; } /* 只保留前两行提示 */
     #fsBtn { right: 10px; top: 10px; padding: 7px 12px; font-size: 12px; }
     #panCtrl { left: 10px; bottom: 12px; gap: 6px; }
     .pan-btn { width: 46px; height: 42px; font-size: 17px; border-radius: 12px; }
@@ -191,31 +205,37 @@
 </head>
 <body>
 
+<!-- 加载层：Three.js 加载完成前显示，成功后淡出移除 -->
 <div id="loading">
   <div id="loadingMain">正在加载 Three.js…</div>
   <div class="tips" id="loadingTips"></div>
 </div>
 
+<!-- 一键横屏（触摸设备才显示） -->
 <button id="fsBtn">
   <span id="fsIcon">⤢</span><span id="fsText">横屏</span>
 </button>
 
+<!-- 左下角左右平移按钮 -->
 <div id="panCtrl">
   <button id="panLeftBtn" class="pan-btn" aria-label="向左移动">◀</button>
   <button id="panRightBtn" class="pan-btn" aria-label="向右移动">▶</button>
 </div>
 
+<!-- 右下角拖拽 / 延音开关 -->
 <div id="ctrlStack">
   <button id="dragBtn" class="ctrl-btn on">拖拽 ON</button>
   <button id="pedalBtn" class="ctrl-btn on">延音 ON</button>
 </div>
 
+<!-- 旋转提示层 -->
 <div id="rotateHint">
   <div class="rh-icon">📱</div>
   <div>请将手机横过来</div>
   <div class="rh-sub">当前浏览器不支持自动旋转，请手动旋转设备</div>
 </div>
 
+<!-- 左上角操作说明 -->
 <div class="hud">
   <h1>🎹 88 键重锤钢琴</h1>
   <p>
@@ -236,16 +256,27 @@
   <p>点击琴键（靠前力度大）· 关闭「拖拽」后单指在琴身滑动可平移 · 双指缩放</p>
 </div>
 
+<!-- 音名 / 力度反馈 -->
 <div id="note"></div>
 <div id="velbar"><div id="velfill"></div></div>
+
+<!-- Three.js 渲染目标 -->
 <canvas id="c"></canvas>
 
 <script>
-/* ============ 动态加载 Three.js（多个 CDN 自动回退） ============ */
+/* =====================================================================
+   模块 0：动态加载 Three.js（多 CDN 自动回退）
+   ---------------------------------------------------------------------
+   设计要点：
+   - 不使用 ES module / importmap，改用 UMD 全局脚本，file:// 下也能运行
+   - 依次尝试 jsDelivr → Zstatic → unpkg，任一成功即启动
+   - 全部失败时在加载层给出明确提示，而不是静默卡住
+   ===================================================================== */
 (function loadThree() {
   var mainEl = document.getElementById('loadingMain');
   var tipsEl = document.getElementById('loadingTips');
 
+  // CDN 备选列表，按优先级排列
   var urls = [
     "https://cdn.jsdelivr.net/npm/three@0.149.0/build/three.min.js",
     "https://s4.zstatic.net/npm/three@0.149.0/build/three.min.js",
@@ -254,6 +285,7 @@
   var i = 0;
 
   function tryNext() {
+    // 所有 CDN 都失败
     if (i >= urls.length) {
       mainEl.textContent = "Three.js 加载失败";
       tipsEl.innerHTML =
@@ -267,8 +299,9 @@
     s.onload = function () {
       if (typeof THREE !== 'undefined') {
         try {
-          startPiano();
+          startPiano();  // 启动主程序
         } catch (err) {
+          // 初始化异常显示在加载层，便于排查
           mainEl.textContent = "初始化失败";
           tipsEl.textContent = err.message;
           console.error(err);
@@ -283,35 +316,69 @@
   tryNext();
 })();
 
+/* =====================================================================
+   主程序：startPiano()
+   ---------------------------------------------------------------------
+   整体结构：
+     §1  渲染器 / 场景 / 相机
+     §2  灯光
+     §3  键盘几何参数
+     §4  地面与琴身
+     §5  创建 88 个琴键
+     §6  自定义相机控制器
+     §7  手势处理（旋转 / 缩放 / 平移 / 弹琴）
+     §8  音频引擎（泛音合成 + 混响）
+     §9  按下 / 松开
+     §10 延音踏板
+     §11 拖拽开关
+     §12 左右平移按钮
+     §13 射线拾取
+     §14 键盘映射
+     §15 一键横屏
+     §16 动画循环
+     §17 窗口尺寸变化
+   ===================================================================== */
 function startPiano() {
   'use strict';
 
-  /* =========================================================
-     0. 工具函数
-     ========================================================= */
+  /* ===================================================================
+     §0 工具函数
+     =================================================================== */
+  // 12 个音名，顺序对应 MIDI % 12
   var NOTE_NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+
+  // 黑键对应的音级集合（C# D# F# G# A#）
   var BLACK_PCS  = new Set([1, 3, 6, 8, 10]);
+
+  // 判断某个 MIDI 是否为黑键
   var isBlackMidi = function (m) { return BLACK_PCS.has(m % 12); };
+
+  // MIDI → 音名（如 60 → C4）
   var noteName = function (midi) {
     return NOTE_NAMES[midi % 12] + (Math.floor(midi / 12) - 1);
   };
+
+  // 数值钳制到 [min, max]
   var clamp = THREE.MathUtils.clamp;
 
-  /* =========================================================
-     1. 渲染器 / 场景 / 相机
-     ========================================================= */
+  /* ===================================================================
+     §1 渲染器 / 场景 / 相机
+     =================================================================== */
   var canvas = document.getElementById('c');
 
   var renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // 限制 DPR，兼顾清晰与性能
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-  renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.12;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping; // 电影级色调映射
+  renderer.toneMappingExposure = 1.12;                // 曝光，偏暗可降至 0.95
   if ('outputEncoding' in renderer) renderer.outputEncoding = THREE.sRGBEncoding;
 
-  // 让光照强度语义与 r155+ 保持一致，避免画面发白
+  // 关键：统一光照强度语义
+  // r149 及更早默认 legacy 光照，PointLight 强度是相对值，会过曝发白
+  // r155+ 默认物理光照，强度按坎德拉计算
+  // 这里强制开启物理光照，保证不同版本视觉一致
   if ('physicallyCorrectLights' in renderer) {
     renderer.physicallyCorrectLights = true;
   } else if ('useLegacyLights' in renderer) {
@@ -320,63 +387,80 @@ function startPiano() {
 
   var scene = new THREE.Scene();
   scene.background = new THREE.Color(0x07090c);
+  // 指数雾：远处淡入背景色，增加纵深
   scene.fog = new THREE.FogExp2(0x07090c, 0.011);
 
+  // 透视相机：42° 垂直视场角，近裁面 0.2，远裁面 400
   var camera = new THREE.PerspectiveCamera(
     42, window.innerWidth / window.innerHeight, 0.2, 400
   );
 
-  /* =========================================================
-     2. 灯光
-     ========================================================= */
+  /* ===================================================================
+     §2 灯光
+     -------------------------------------------------------------------
+     4 盏灯分工：
+       HemisphereLight  —— 环境基础照明，上蓝下暗
+       keyLight         —— 主平行光，投射阴影，决定明暗关系
+       rimLight         —— 蓝色轮廓光，从后方勾勒琴键边缘
+       fillLight        —— 蓝色点光源，营造氛围，带呼吸动画
+     =================================================================== */
   scene.add(new THREE.HemisphereLight(0x9db8ff, 0x0a0c11, 0.8));
 
   var keyLight = new THREE.DirectionalLight(0xffffff, 2.3);
   keyLight.position.set(14, 28, 20);
   keyLight.castShadow = true;
-  keyLight.shadow.mapSize.set(2048, 2048);
+  keyLight.shadow.mapSize.set(2048, 2048); // 阴影贴图分辨率
+  // 阴影相机正交范围：刚好覆盖整个键盘
   keyLight.shadow.camera.left   = -20;
   keyLight.shadow.camera.right  =  20;
   keyLight.shadow.camera.top    =  20;
   keyLight.shadow.camera.bottom = -20;
   keyLight.shadow.camera.near   =  1;
   keyLight.shadow.camera.far    =  80;
-  keyLight.shadow.bias = -0.0006;
-  keyLight.shadow.normalBias = 0.03;
+  keyLight.shadow.bias = -0.0006;       // 消除阴影条纹
+  keyLight.shadow.normalBias = 0.03;    // 消除自阴影粉刺
   scene.add(keyLight);
 
   var rimLight = new THREE.DirectionalLight(0x4d7dff, 1.4);
   rimLight.position.set(-16, 10, -14);
   scene.add(rimLight);
 
+  // 物理光照下 PointLight 数值需要更大才有效果，30 约等于 legacy 的 2.5
   var fillLight = new THREE.PointLight(0x66ccff, 30, 60, 2);
   fillLight.position.set(0, 9, 16);
   scene.add(fillLight);
 
-  /* =========================================================
-     3. 键盘几何参数
-     ========================================================= */
-  var MIDI_LOW  = 21;
-  var MIDI_HIGH = 108;
+  /* ===================================================================
+     §3 键盘几何参数（88 键 A0–C8）
+     -------------------------------------------------------------------
+     坐标系约定：
+       X 轴 —— 沿键盘长轴，左负右正
+       Y 轴 —— 垂直向上
+       Z 轴 —— 指向琴键前端（演奏者方向）
+     琴键绕后部支点旋转，rotation.x 为正时前端下沉
+     =================================================================== */
+  var MIDI_LOW  = 21;   // A0
+  var MIDI_HIGH = 108;  // C8
 
-  var WHITE_W   = 0.55;
-  var WHITE_GAP = 0.028;
-  var WHITE_H   = 0.42;
-  var WHITE_LEN = 3.20;
+  var WHITE_W   = 0.55;   // 白键中心间距
+  var WHITE_GAP = 0.028;  // 白键缝隙（视觉分隔）
+  var WHITE_H   = 0.42;   // 白键厚度
+  var WHITE_LEN = 3.20;   // 白键长度
 
-  var BLACK_W   = WHITE_W * 0.58;
-  var BLACK_H   = 0.38;
-  var BLACK_LEN = WHITE_LEN * 0.62;
+  var BLACK_W   = WHITE_W * 0.58;   // 黑键宽度 ≈ 0.32
+  var BLACK_H   = 0.38;             // 黑键厚度
+  var BLACK_LEN = WHITE_LEN * 0.62; // 黑键长度 ≈ 2.0
 
-  var KEY_BASE_Y = 1.20;
-  var KEY_BACK_Z = -1.60;
-  var PIVOT_Z    = KEY_BACK_Z + 0.06;
-  var WHITE_TOP  = KEY_BASE_Y + WHITE_H;
-  var BLACK_BASE = WHITE_TOP + 0.004;
+  var KEY_BASE_Y = 1.20;                    // 白键底面高度
+  var KEY_BACK_Z = -1.60;                   // 琴键后边缘 Z
+  var PIVOT_Z    = KEY_BACK_Z + 0.06;       // 旋转支点 Z（略靠前于后缘）
+  var WHITE_TOP  = KEY_BASE_Y + WHITE_H;    // 白键顶面 Y
+  var BLACK_BASE = WHITE_TOP + 0.004;       // 黑键底面（略微抬升避免 Z-fighting）
   var BLACK_TOP  = BLACK_BASE + BLACK_H;
 
-  var PRESS_ANGLE = 0.092;
+  var PRESS_ANGLE = 0.092; // 满力度按下时的旋转弧度（约 5.3°）
 
+  // 建立「MIDI → 白键序号」映射，用于计算每个键的 X 坐标
   var whiteIndexByMidi = new Map();
   (function () {
     var i = 0;
@@ -384,13 +468,14 @@ function startPiano() {
       if (!isBlackMidi(m)) { whiteIndexByMidi.set(m, i); i++; }
     }
   })();
-  var WHITE_COUNT = whiteIndexByMidi.size;
-  var TOTAL_W     = WHITE_COUNT * WHITE_W;
-  var START_X     = -(WHITE_COUNT - 1) / 2 * WHITE_W;
+  var WHITE_COUNT = whiteIndexByMidi.size;           // 52
+  var TOTAL_W     = WHITE_COUNT * WHITE_W;           // 键盘总宽 ≈ 28.6
+  var START_X     = -(WHITE_COUNT - 1) / 2 * WHITE_W; // 第一个白键 X，居中排布
 
-  /* =========================================================
-     4. 地面 & 琴身
-     ========================================================= */
+  /* ===================================================================
+     §4 地面与琴身
+     =================================================================== */
+  // 地面：接收阴影的大平面
   var floor = new THREE.Mesh(
     new THREE.PlaneGeometry(200, 200),
     new THREE.MeshStandardMaterial({ color: 0x10141a, roughness: 0.85, metalness: 0.15 })
@@ -400,6 +485,7 @@ function startPiano() {
   floor.receiveShadow = true;
   scene.add(floor);
 
+  // 琴身：键盘后方的深色箱体
   var body = new THREE.Mesh(
     new THREE.BoxGeometry(TOTAL_W + 1.8, KEY_BASE_Y, 3.2),
     new THREE.MeshStandardMaterial({ color: 0x161a22, roughness: 0.40, metalness: 0.60 })
@@ -409,6 +495,7 @@ function startPiano() {
   body.receiveShadow = true;
   scene.add(body);
 
+  // 琴键下方支撑板，遮住琴键底部的缝隙
   var shelf = new THREE.Mesh(
     new THREE.BoxGeometry(TOTAL_W + 1.2, 0.14, WHITE_LEN + 0.6),
     new THREE.MeshStandardMaterial({ color: 0x0d1117, roughness: 0.6, metalness: 0.35 })
@@ -417,6 +504,7 @@ function startPiano() {
   shelf.receiveShadow = true;
   scene.add(shelf);
 
+  // 琴身后缘的蓝色装饰灯带（自发光）
   var strip = new THREE.Mesh(
     new THREE.BoxGeometry(TOTAL_W + 1.4, 0.07, 0.45),
     new THREE.MeshStandardMaterial({
@@ -427,16 +515,22 @@ function startPiano() {
   strip.position.set(0, KEY_BASE_Y + 0.02, KEY_BACK_Z - 1.55);
   scene.add(strip);
 
-  /* =========================================================
-     5. 创建琴键
-     ========================================================= */
-  var keys = [];
-  var keysByMidi = new Map();
-  var pickMeshes = [];
+  /* ===================================================================
+     §5 创建 88 个琴键
+     -------------------------------------------------------------------
+     每个琴键是一个 Group（pivot），原点位于键面后部支点处。
+     子 Mesh 在 pivot 局部坐标中向下、向前偏移，
+     这样 rotation.x 旋转时看起来像真实琴键绕支点转动。
+     =================================================================== */
+  var keys = [];                 // 全部琴键对象
+  var keysByMidi = new Map();    // MIDI → 琴键对象
+  var pickMeshes = [];           // 参与射线拾取的 Mesh 列表
 
+  // 几何体复用，88 个键共享，节省显存
   var whiteGeo = new THREE.BoxGeometry(WHITE_W - WHITE_GAP, WHITE_H, WHITE_LEN);
   var blackGeo = new THREE.BoxGeometry(BLACK_W, BLACK_H, BLACK_LEN);
 
+  // 基础材质模板，每个键 clone 一份，因为 emissiveIntensity 需要独立控制
   var whiteBaseMat = new THREE.MeshStandardMaterial({
     color: 0xf7f7f4, roughness: 0.30, metalness: 0.03,
     emissive: 0x5fb8ff, emissiveIntensity: 0
@@ -446,17 +540,25 @@ function startPiano() {
     emissive: 0x3aa0ff, emissiveIntensity: 0
   });
 
+  /**
+   * 创建一个琴键
+   * @param {number} midi  MIDI 音高
+   * @param {number} x     琴键中心 X
+   * @param {boolean} black 是否黑键
+   */
   function createKey(midi, x, black) {
     var h    = black ? BLACK_H   : WHITE_H;
     var len  = black ? BLACK_LEN : WHITE_LEN;
     var topY = black ? BLACK_TOP : WHITE_TOP;
 
+    // pivot 放在键面后部，作为旋转支点
     var pivot = new THREE.Group();
     pivot.position.set(x, topY, PIVOT_Z);
 
     var mat = (black ? blackBaseMat : whiteBaseMat).clone();
     var mesh = new THREE.Mesh(black ? blackGeo : whiteGeo, mat);
 
+    // Mesh 局部位置：中心在键长一半处，向下偏移半个厚度
     var centerZ = KEY_BACK_Z + len / 2;
     mesh.position.set(0, -h / 2, centerZ - PIVOT_Z);
     mesh.castShadow = true;
@@ -465,16 +567,22 @@ function startPiano() {
     pivot.add(mesh);
     scene.add(pivot);
 
+    // 琴键运行时状态
     var key = {
-      midi: midi, x: x, black: black, pivot: pivot, mesh: mesh,
+      midi: midi,
+      x: x,
+      black: black,
+      pivot: pivot,
+      mesh: mesh,
       name: noteName(midi),
-      pressed: false,
-      angle: 0,
-      angVel: 0,
-      pressDepth: 1,
-      voice: null
+      pressed: false,   // 是否被按下
+      angle: 0,         // 当前旋转角
+      angVel: 0,        // 当前角速度（重锤惯性）
+      pressDepth: 1,    // 按下深度系数（由力度决定）
+      voice: null       // 当前发声的 voice 对象
     };
 
+    // 反查：射线拾取到 Mesh 后能拿到 key 对象
     mesh.userData.key = key;
 
     keys.push(key);
@@ -482,6 +590,7 @@ function startPiano() {
     pickMeshes.push(mesh);
   }
 
+  // 创建白键
   for (var mw = MIDI_LOW; mw <= MIDI_HIGH; mw++) {
     if (!isBlackMidi(mw)) {
       var iw = whiteIndexByMidi.get(mw);
@@ -489,17 +598,26 @@ function startPiano() {
     }
   }
 
+  // 创建黑键
+  // BLACK_OFFSET 模拟真实钢琴黑键的偏置：黑键略偏向右侧白键
   var BLACK_OFFSET = { 1: 1.09, 3: 1.09, 6: 1.10, 8: 1.10, 10: 1.09 };
   for (var mb = MIDI_LOW; mb <= MIDI_HIGH; mb++) {
     if (!isBlackMidi(mb)) continue;
-    var lowerIdx = whiteIndexByMidi.get(mb - 1);
+    var lowerIdx = whiteIndexByMidi.get(mb - 1); // 黑键左下方的白键序号
     var off = BLACK_OFFSET[mb % 12];
     createKey(mb, START_X + (lowerIdx - 0.5 + off) * WHITE_W, true);
   }
 
-  /* =========================================================
-     6. 相机控制器
-     ========================================================= */
+  /* ===================================================================
+     §6 自定义相机控制器
+     -------------------------------------------------------------------
+     球坐标表示：
+       theta  —— 水平旋转角
+       phi    —— 垂直俯仰角（0 为垂直向上，π/2 为水平）
+       radius —— 相机到目标的距离
+       target —— 相机注视点
+     每个分量都有「当前值」和「目标值」，每帧阻尼插值实现平滑过渡
+     =================================================================== */
   var camState = {
     theta: 0, phi: 1.05, radius: 40,
     target: new THREE.Vector3(0, 1.5, 0),
@@ -507,15 +625,16 @@ function startPiano() {
     targetGoal: new THREE.Vector3(0, 1.5, 0)
   };
 
-  var PHI_MIN   = 0.12;
-  var PHI_MAX   = Math.PI * 0.47;
-  var DIST_MIN  = 6;
-  var DIST_MAX  = 110;
-  var PAN_LIMIT = TOTAL_W * 0.85;
+  var PHI_MIN   = 0.12;               // 俯仰下限（防止穿到地面以下）
+  var PHI_MAX   = Math.PI * 0.47;     // 俯仰上限（略低于水平）
+  var DIST_MIN  = 6;                  // 最近距离
+  var DIST_MAX  = 110;                // 最远距离
+  var PAN_LIMIT = TOTAL_W * 0.85;     // 左右平移最大 X 范围
 
-  var userMovedCamera = false;
-  var dragEnabled = true;
+  var userMovedCamera = false; // 用户是否手动调过视角（用于窗口 resize 时是否自动重适配）
+  var dragEnabled = true;      // 拖拽开关状态
 
+  /** 根据 camState 计算相机位置并 lookAt */
   function applyCamera() {
     var sp = Math.sin(camState.phi);
     var cp = Math.cos(camState.phi);
@@ -525,13 +644,15 @@ function startPiano() {
       camState.target.z + camState.radius * sp * Math.cos(camState.theta)
     );
     camera.lookAt(camState.target);
-    camera.updateMatrixWorld();
+    camera.updateMatrixWorld(); // 立即更新矩阵，射线拾取需要
   }
 
+  /** 自动适配相机，让整个键盘完整进入视野 */
   function fitCameraToKeyboard() {
     var aspect = window.innerWidth / window.innerHeight;
     var vFov = THREE.MathUtils.degToRad(camera.fov);
     var needW = TOTAL_W + 2.2;
+    // 根据水平视场角反推需要的距离
     var distH = (needW / 2) / (Math.tan(vFov / 2) * Math.max(aspect, 0.25));
     var radius = clamp(distH * 1.35, 16, 100);
 
@@ -545,13 +666,23 @@ function startPiano() {
   }
   fitCameraToKeyboard();
 
-  /* =========================================================
-     7. 手势处理
-     ========================================================= */
-  var gesturePointers = new Map();
-  var pianoPointers   = new Map();
-  var gesture = null;
+  /* ===================================================================
+     §7 手势处理
+     -------------------------------------------------------------------
+     两类指针分离：
+       pianoPointers   —— 落在琴键上的指针，负责弹奏
+       gesturePointers —— 落在空白区的指针，负责相机手势
+     这样多指和弦与相机操作互不干扰。
 
+     手势优先级：
+       1 指 → 拖拽开：旋转 / 拖拽关：平移
+       2 指 → 捏合缩放 + 双指平移
+     =================================================================== */
+  var gesturePointers = new Map(); // pointerId → {x, y}
+  var pianoPointers   = new Map(); // pointerId → key
+  var gesture = null;              // 当前手势描述对象
+
+  /** 根据当前 gesturePointers 数量重建 gesture 描述 */
   function startGesture() {
     if (gesturePointers.size === 1) {
       var p = gesturePointers.values().next().value;
@@ -564,13 +695,14 @@ function startPiano() {
           startPhi: camState.phiGoal
         };
       } else {
-        // 拖拽关闭：单指空白区 → 平移（手机上主要靠这个和方向按钮）
+        // 拖拽关闭：单指空白区 → 平移（手机端辅助手段）
         gesture = {
           type: 'pan',
           lastX: p.x, lastY: p.y
         };
       }
     } else if (gesturePointers.size === 2) {
+      // 双指 → 捏合缩放 + 中点平移
       var it = gesturePointers.values();
       var a = it.next().value;
       var b = it.next().value;
@@ -587,19 +719,25 @@ function startPiano() {
     }
   }
 
+  /**
+   * 按屏幕像素位移平移相机
+   * 将屏幕 dx/dy 投影到相机的右/上方向，再按距离缩放
+   */
   function panByScreen(dx, dy) {
     if (dx === 0 && dy === 0) return;
-    var scale = camState.radius * 0.0016;
+    var scale = camState.radius * 0.0016; // 距离越远，平移越快
     var right = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0);
     var up    = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 1);
     camState.targetGoal.addScaledVector(right, -dx * scale);
     camState.targetGoal.addScaledVector(up,    dy * scale);
+    // 限制平移范围，避免跑出键盘区域太远
     camState.targetGoal.x = clamp(camState.targetGoal.x, -PAN_LIMIT, PAN_LIMIT);
     camState.targetGoal.y = clamp(camState.targetGoal.y, -4, 20);
     camState.targetGoal.z = clamp(camState.targetGoal.z, -12, 12);
     userMovedCamera = true;
   }
 
+  /** 手势移动主分发 */
   function handleGestureMove() {
     if (!gesture) return;
 
@@ -608,7 +746,7 @@ function startPiano() {
       var p = gesturePointers.values().next().value;
       var dx = p.x - gesture.startX;
       var dy = p.y - gesture.startY;
-      var ROT_SPEED = 0.0045;
+      var ROT_SPEED = 0.0045; // 旋转灵敏度，越大越灵敏
       camState.thetaGoal = gesture.startTheta - dx * ROT_SPEED;
       camState.phiGoal = clamp(gesture.startPhi - dy * ROT_SPEED, PHI_MIN, PHI_MAX);
       userMovedCamera = true;
@@ -630,8 +768,12 @@ function startPiano() {
       var dist = Math.hypot(a.x - b.x, a.y - b.y);
       var midX = (a.x + b.x) / 2;
       var midY = (a.y + b.y) / 2;
+
+      // 两指距离变化 → 半径变化（距离越近，半径越小 = 拉近）
       var scale = gesture.startDist / Math.max(dist, 5);
       camState.radiusGoal = clamp(gesture.startRadius * scale, DIST_MIN, DIST_MAX);
+
+      // 两指中点移动 → 平移
       var ddx = midX - gesture.lastMidX;
       var ddy = midY - gesture.lastMidY;
       gesture.lastMidX = midX;
@@ -641,20 +783,25 @@ function startPiano() {
     }
   }
 
+  /** 指针按下：优先判断是否落在琴键上 */
   function onPointerDown(e) {
     var hit = pickKey(e.clientX, e.clientY);
     if (hit) {
+      // 落在琴键上：阻止冒泡，避免触发相机手势
       e.stopImmediatePropagation();
       e.preventDefault();
       pianoPointers.set(e.pointerId, hit.key);
       pressKey(hit.key, hit.velocity);
       return;
     }
+    // 落在空白处：加入相机手势
     gesturePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     startGesture();
   }
 
+  /** 指针移动：区分弹琴滑动连奏 / 相机手势 */
   function onPointerMove(e) {
+    // —— 弹琴指针：滑动连奏 ——
     if (pianoPointers.has(e.pointerId)) {
       var oldKey = pianoPointers.get(e.pointerId);
       var hit = pickKey(e.clientX, e.clientY);
@@ -670,6 +817,7 @@ function startPiano() {
       }
       return;
     }
+    // —— 手势指针 ——
     var gp = gesturePointers.get(e.pointerId);
     if (gp) {
       gp.x = e.clientX;
@@ -678,6 +826,7 @@ function startPiano() {
     }
   }
 
+  /** 指针抬起：清理对应状态 */
   function onPointerEnd(e) {
     if (pianoPointers.has(e.pointerId)) {
       releaseKey(pianoPointers.get(e.pointerId));
@@ -685,16 +834,19 @@ function startPiano() {
     }
     if (gesturePointers.has(e.pointerId)) {
       gesturePointers.delete(e.pointerId);
+      // 剩余指针重新构建手势（例如双指变单指）
       if (gesturePointers.size >= 1) startGesture();
       else gesture = null;
     }
   }
 
+  // 捕获阶段监听 pointerdown，确保先于其他监听器处理
   canvas.addEventListener('pointerdown', onPointerDown, true);
   window.addEventListener('pointermove', onPointerMove, { passive: true });
   window.addEventListener('pointerup', onPointerEnd);
   window.addEventListener('pointercancel', onPointerEnd);
 
+  // 滚轮缩放（桌面端）
   canvas.addEventListener('wheel', function (e) {
     e.preventDefault();
     var factor = Math.exp(e.deltaY * 0.0012);
@@ -702,15 +854,24 @@ function startPiano() {
     userMovedCamera = true;
   }, { passive: false });
 
-  /* =========================================================
-     8. 音频引擎
-     ========================================================= */
+  /* ===================================================================
+     §8 音频引擎
+     -------------------------------------------------------------------
+     用 Web Audio 合成钢琴音色，不使用采样文件：
+       每个音符 = 8 个正弦波（基频 + 7 个泛音）
+       各泛音有独立的振幅和衰减时长，形成钢琴特有的"先亮后暗"音色
+       经 Convolver 混响后送入 DynamicsCompressor 压缩，最后输出
+     =================================================================== */
   var audioCtx = null;
   var masterGain = null;
-  var activeVoicesList = [];
-  var MAX_VOICES = 40;
-  var sustainPedal = true;
+  var activeVoicesList = [];   // 当前正在发声的 voice 列表
+  var MAX_VOICES = 40;         // 同时发声上限，防止过载
+  var sustainPedal = true;     // 延音踏板状态，默认开
 
+  // 泛音结构表
+  //   r = 频率比（相对基频）
+  //   g = 振幅（相对基频峰值）
+  //   d = 衰减时长系数（相对自然延音时长）
   var PARTIALS = [
     { r: 1,  g: 1.00, d: 1.00 },
     { r: 2,  g: 0.46, d: 0.72 },
@@ -722,11 +883,16 @@ function startPiano() {
     { r: 11, g: 0.016, d: 0.13 }
   ];
 
+  /**
+   * 计算某个音的自然延音时长（秒）
+   * 低音衰减慢（A0 ≈ 20s），高音衰减快（C8 ≈ 1.4s）
+   */
   function getSustainDuration(midi) {
     var t = 20 * Math.pow(0.5, (midi - MIDI_LOW) / 28);
     return clamp(t, 1.4, 22);
   }
 
+  /** 生成混响用的脉冲响应（指数衰减的噪声） */
   function makeImpulseResponse(seconds, decay) {
     var rate = audioCtx.sampleRate;
     var len = Math.floor(rate * seconds);
@@ -740,10 +906,12 @@ function startPiano() {
     return buf;
   }
 
+  /** 懒初始化 AudioContext（需用户交互后才能创建） */
   function ensureAudio() {
     if (!audioCtx) {
       audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 
+      // 动态压缩器：让整体音量平稳，避免多音叠加爆音
       var compressor = audioCtx.createDynamicsCompressor();
       compressor.threshold.value = -18;
       compressor.knee.value = 26;
@@ -755,37 +923,47 @@ function startPiano() {
       masterGain = audioCtx.createGain();
       masterGain.gain.value = 0.85;
 
+      // 混响：干声 + 湿声同时送入压缩器
       var convolver = audioCtx.createConvolver();
       convolver.buffer = makeImpulseResponse(2.2, 2.2);
       var wet = audioCtx.createGain();
       wet.gain.value = 0.30;
 
-      masterGain.connect(compressor);
-      masterGain.connect(convolver);
+      masterGain.connect(compressor);  // 干声
+      masterGain.connect(convolver);   // 湿声
       convolver.connect(wet);
       wet.connect(compressor);
     }
+    // 浏览器自动播放策略：需要用户手势后才能 resume
     if (audioCtx.state === 'suspended') audioCtx.resume();
   }
 
+  /**
+   * 播放一个音符，返回 voice 对象
+   * @param {number} midi     MIDI 音高
+   * @param {number} velocity 力度 0~1（默认 0.85）
+   */
   function playNote(midi, velocity) {
     if (velocity === undefined) velocity = 0.85;
     ensureAudio();
 
+    // 声部数超限：释放最早的一个
     if (activeVoicesList.length >= MAX_VOICES) {
       fastReleaseVoice(activeVoicesList.shift());
     }
 
     var ctx = audioCtx;
-    var t = ctx.currentTime + 0.001;
+    var t = ctx.currentTime + 0.001; // 留一点余量，避免调度失败
     var v = clamp(velocity, 0.15, 1);
-    var freq = 440 * Math.pow(2, (midi - 69) / 12);
+    var freq = 440 * Math.pow(2, (midi - 69) / 12); // A4 = 440Hz
     var sustainDur = getSustainDuration(midi);
 
+    // 力度 → 音量 / 亮度 / 起音速度
     var amp       = 0.045 + 0.175 * v;
     var bright    = 0.25 + 0.75 * v;
-    var attackMul = 1.35 - 0.85 * v;
+    var attackMul = 1.35 - 0.85 * v; // 力度大时起音更快
 
+    // 每个 voice 的总线，便于统一快速淡出
     var bus = ctx.createGain();
     bus.gain.value = amp;
     bus.connect(masterGain);
@@ -796,6 +974,7 @@ function startPiano() {
       cleanupTimer: null
     };
 
+    // 高音区减少泛音数量，避免刺耳
     var maxRatio = midi > 96 ? 4 : midi > 84 ? 6 : 11;
 
     for (var pi = 0; pi < PARTIALS.length; pi++) {
@@ -805,6 +984,7 @@ function startPiano() {
       var osc = ctx.createOscillator();
       osc.type = 'sine';
       osc.frequency.value = freq * p.r;
+      // 轻微失谐让声音更厚实，模拟琴弦不完美
       osc.detune.value = (Math.random() - 0.5) * 5.5;
 
       var g = ctx.createGain();
@@ -812,6 +992,7 @@ function startPiano() {
       var attack = (0.0035 + 0.011 / p.r) * attackMul;
       var peak   = p.g * (p.r === 1 ? 1 : bright);
 
+      // 指数包络：静音 → 峰值 → 长衰减
       g.gain.setValueAtTime(0.0001, t);
       g.gain.exponentialRampToValueAtTime(Math.max(0.0004, peak), t + attack);
       g.gain.exponentialRampToValueAtTime(0.0001, t + attack + dur);
@@ -827,6 +1008,7 @@ function startPiano() {
 
     activeVoicesList.push(voice);
 
+    // 自然结束后自动清理
     voice.cleanupTimer = setTimeout(function () {
       if (!voice.stopped) {
         voice.stopped = true;
@@ -838,6 +1020,10 @@ function startPiano() {
     return voice;
   }
 
+  /**
+   * 快速制音：约 0.16s 内淡出并停止所有振荡器
+   * 对应踏板抬起或踏板关闭时松键
+   */
   function fastReleaseVoice(voice) {
     if (!voice || voice.stopped) return;
     voice.stopped = true;
@@ -848,6 +1034,7 @@ function startPiano() {
       var release = 0.16;
       try {
         voice.bus.gain.cancelScheduledValues(now);
+        // setTargetAtTime 从当前值指数逼近 0，无需读取当前值
         voice.bus.gain.setTargetAtTime(0, now, release / 3);
       } catch (e) { /* 忽略 */ }
       for (var i = 0; i < voice.oscs.length; i++) {
@@ -861,14 +1048,15 @@ function startPiano() {
     }, 280);
   }
 
-  /* =========================================================
-     9. 按下 / 松开
-     ========================================================= */
+  /* ===================================================================
+     §9 按下 / 松开
+     =================================================================== */
   var noteEl  = document.getElementById('note');
   var velBar  = document.getElementById('velbar');
   var velFill = document.getElementById('velfill');
   var noteTimer = null, velTimer = null;
 
+  /** 短暂显示音名和力度条 */
   function flashNote(name, velocity) {
     noteEl.textContent = name;
     noteEl.classList.add('show');
@@ -881,18 +1069,21 @@ function startPiano() {
     velTimer = setTimeout(function () { velBar.classList.remove('show'); }, 420);
   }
 
+  /** 按下琴键 */
   function pressKey(key, velocity) {
     if (!key || key.pressed) return;
     if (velocity === undefined) velocity = 0.85;
     key.pressed = true;
-    key.pressDepth = 0.82 + 0.28 * velocity;
+    key.pressDepth = 0.82 + 0.28 * velocity; // 力度越大，按得越深
 
+    // 同一个键之前的声音还在响（踏板开着），先快速淡出
     if (key.voice && !key.voice.stopped) fastReleaseVoice(key.voice);
 
     key.voice = playNote(key.midi, velocity);
     flashNote(key.name, velocity);
   }
 
+  /** 松开琴键：是否立即制音取决于踏板 */
   function releaseKey(key) {
     if (!key) return;
     key.pressed = false;
@@ -901,18 +1092,21 @@ function startPiano() {
     if (!voice || voice.stopped) return;
 
     if (sustainPedal) {
+      // 踏板开着：制音器不落下，让弦自然衰减
       voice.released = true;
     } else {
+      // 踏板关闭：立即制音
       fastReleaseVoice(voice);
       key.voice = null;
     }
   }
 
-  /* =========================================================
-     10. 延音踏板
-     ========================================================= */
+  /* ===================================================================
+     §10 延音踏板
+     =================================================================== */
   var pedalBtn = document.getElementById('pedalBtn');
 
+  /** 切换踏板状态；关闭时把所有已松键但仍在响的音一起制音 */
   function setSustainPedal(on) {
     sustainPedal = on;
     pedalBtn.classList.toggle('on', on);
@@ -931,15 +1125,19 @@ function startPiano() {
     pedalBtn.blur();
   });
 
-  /* =========================================================
-     11. 拖拽开关
-     ========================================================= */
+  /* ===================================================================
+     §11 拖拽开关
+     -------------------------------------------------------------------
+     关闭拖拽后：
+       - 单指空白区不再旋转，而是平移
+       - 多指弹奏时视角完全稳定
+     =================================================================== */
   var dragBtn = document.getElementById('dragBtn');
 
   function setDragEnabled(on) {
     dragEnabled = on;
+    // 正在旋转时关闭拖拽：无缝切换为平移，避免手势中断
     if (!on && gesture && gesture.type === 'rotate') {
-      // 正在旋转时关掉拖拽，切换成平移，避免手势中断
       var p = gesturePointers.values().next().value;
       if (p) {
         gesture = { type: 'pan', lastX: p.x, lastY: p.y };
@@ -957,9 +1155,12 @@ function startPiano() {
   });
   setDragEnabled(true);
 
-  /* =========================================================
-     12. 左下角左右移动按钮（按住持续平移）
-     ========================================================= */
+  /* ===================================================================
+     §12 左下角左右移动按钮
+     -------------------------------------------------------------------
+     按住持续平移，与方向键走同一条代码路径（见 §16）
+     使用 setPointerCapture 确保手指滑出按钮也能正确松开
+     =================================================================== */
   var panBtnState = { left: false, right: false };
   var panLeftBtn  = document.getElementById('panLeftBtn');
   var panRightBtn = document.getElementById('panRightBtn');
@@ -988,13 +1189,17 @@ function startPiano() {
   bindPanButton(panLeftBtn, 'left');
   bindPanButton(panRightBtn, 'right');
 
-  /* =========================================================
-     13. 拾取
-     ========================================================= */
+  /* ===================================================================
+     §13 射线拾取
+     -------------------------------------------------------------------
+     鼠标/手指位置 → NDC 坐标 → Raycaster → 与琴键 Mesh 求交
+     力度根据击键点在琴键长度方向的位置决定：越靠前力度越大
+     =================================================================== */
   var raycaster = new THREE.Raycaster();
   var ndc = new THREE.Vector2();
 
   function pickKey(clientX, clientY) {
+    // 屏幕坐标 → 标准化设备坐标 [-1, 1]
     ndc.x = (clientX / window.innerWidth) * 2 - 1;
     ndc.y = -(clientY / window.innerHeight) * 2 + 1;
     raycaster.setFromCamera(ndc, camera);
@@ -1003,25 +1208,35 @@ function startPiano() {
 
     var hit = hits[0];
     var key = hit.object.userData.key;
+
+    // 击键点距琴键后端的比例，越靠前（t 越大）力度越大
     var len = key.black ? BLACK_LEN : WHITE_LEN;
     var t = clamp((hit.point.z - KEY_BACK_Z) / len, 0, 1);
     var velocity = clamp(0.48 + 0.58 * Math.pow(t, 0.7), 0.48, 1);
+
     return { key: key, velocity: velocity };
   }
 
-  /* =========================================================
-     14. 键盘映射
-     ========================================================= */
+  /* ===================================================================
+     §14 键盘映射
+     -------------------------------------------------------------------
+     电脑键盘两个八度，可通过 [ ] 整体移调
+     空格切换延音踏板
+     =================================================================== */
+  // 基础映射：按键 → MIDI（未移调，从 C4=60 开始）
   var BASE_KEY_MAP = {
+    // 低八度 C4–B4 白键
     'z': 60, 's': 61, 'x': 62, 'd': 63, 'c': 64, 'v': 65, 'g': 66,
     'b': 67, 'h': 68, 'n': 69, 'j': 70, 'm': 71,
+    // 高八度 C5–B5 白键
     'q': 72, '2': 73, 'w': 74, '3': 75, 'e': 76, 'r': 77, '5': 78,
     't': 79, '6': 80, 'y': 81, '7': 82, 'u': 83
   };
 
-  var octaveShift = 0;
+  var octaveShift = 0; // 移调八度数，范围 -3 ~ +2
   var OCT_LABEL = document.getElementById('octLabel');
 
+  /** 更新 HUD 中的当前音域显示 */
   function updateOctaveLabel() {
     if (!OCT_LABEL) return;
     var lowMidi  = 60 + octaveShift * 12;
@@ -1031,8 +1246,9 @@ function startPiano() {
   updateOctaveLabel();
 
   var panKeys = { left: false, right: false };
-  var PAN_SPEED = 16;
+  var PAN_SPEED = 16; // 方向键平移速度（单位/秒）
 
+  // 空格键：切换踏板（捕获阶段处理，优先于按钮默认行为）
   window.addEventListener('keydown', function (e) {
     if (e.code === 'Space') {
       e.preventDefault();
@@ -1041,11 +1257,13 @@ function startPiano() {
   }, true);
 
   window.addEventListener('keydown', function (e) {
-    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.metaKey || e.ctrlKey || e.altKey) return; // 不干扰系统快捷键
 
+    // 方向键：左右平移
     if (e.key === 'ArrowLeft')  { e.preventDefault(); panKeys.left = true;  return; }
     if (e.key === 'ArrowRight') { e.preventDefault(); panKeys.right = true; return; }
 
+    // [ ] 移调
     if (e.key === '[') {
       octaveShift = Math.max(-3, octaveShift - 1);
       updateOctaveLabel(); e.preventDefault(); return;
@@ -1055,7 +1273,8 @@ function startPiano() {
       updateOctaveLabel(); e.preventDefault(); return;
     }
 
-    if (e.repeat) return;
+    if (e.repeat) return; // 长按不重复触发
+
     var base = BASE_KEY_MAP[e.key.toLowerCase()];
     if (base === undefined) return;
 
@@ -1075,6 +1294,7 @@ function startPiano() {
     releaseKey(keysByMidi.get(base + octaveShift * 12));
   });
 
+  // 窗口失焦：复位所有按键/手势/按钮状态，避免卡住
   window.addEventListener('blur', function () {
     keys.forEach(function (k) { k.pressed = false; });
     pianoPointers.forEach(function (k) { if (k) releaseKey(k); });
@@ -1089,9 +1309,12 @@ function startPiano() {
     panRightBtn.classList.remove('pressed');
   });
 
-  /* =========================================================
-     15. 一键横屏
-     ========================================================= */
+  /* ===================================================================
+     §15 一键横屏
+     -------------------------------------------------------------------
+     Android Chrome 等支持 Screen Orientation API，可自动锁横屏
+     iPhone Safari 不支持锁定，会弹出提示让用户手动旋转
+     =================================================================== */
   var fsBtn      = document.getElementById('fsBtn');
   var fsIcon     = document.getElementById('fsIcon');
   var fsText     = document.getElementById('fsText');
@@ -1100,6 +1323,7 @@ function startPiano() {
   var isTouchDevice = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
   var landscapeMode = false;
 
+  // 桌面端隐藏横屏按钮（PC 本身是横向的）
   if (!isTouchDevice) fsBtn.classList.add('hidden');
 
   var isLandscape = function () { return window.innerWidth > window.innerHeight; };
@@ -1121,6 +1345,7 @@ function startPiano() {
   }
   rotateHint.addEventListener('pointerdown', hideRotateHint);
 
+  /** 尺寸变化后重新适配相机 */
   function refitCameraAfterRotate(delay) {
     if (delay === undefined) delay = 280;
     setTimeout(function () {
@@ -1134,11 +1359,13 @@ function startPiano() {
 
   async function enterLandscape() {
     var el = document.documentElement;
+    // 尝试进入全屏
     try {
       if (el.requestFullscreen) await el.requestFullscreen({ navigationUI: 'hide' });
       else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
     } catch (err) { /* 忽略 */ }
 
+    // 尝试锁定横屏
     var locked = false;
     try {
       if (screen.orientation && typeof screen.orientation.lock === 'function') {
@@ -1153,6 +1380,7 @@ function startPiano() {
     landscapeMode = true;
     updateFsBtn();
     refitCameraAfterRotate();
+    // 锁定失败且当前不是横屏 → 提示用户手动旋转
     if (!locked && !isLandscape()) showRotateHint();
   }
 
@@ -1178,6 +1406,7 @@ function startPiano() {
     else enterLandscape();
   });
 
+  // 用户用系统手势 / Esc 退出全屏时同步状态
   function syncFullscreenState() {
     var fsEl = document.fullscreenElement || document.webkitFullscreenElement;
     if (!fsEl && landscapeMode) {
@@ -1191,6 +1420,7 @@ function startPiano() {
   document.addEventListener('fullscreenchange', syncFullscreenState);
   document.addEventListener('webkitfullscreenchange', syncFullscreenState);
 
+  // 设备方向变化时收起提示并重适配
   if (screen.orientation && screen.orientation.addEventListener) {
     screen.orientation.addEventListener('change', function () {
       if (isLandscape()) hideRotateHint();
@@ -1204,18 +1434,28 @@ function startPiano() {
     }, 320);
   });
 
-  /* =========================================================
-     16. 动画循环
-     ========================================================= */
+  /* ===================================================================
+     §16 动画循环
+     -------------------------------------------------------------------
+     每帧做四件事：
+       1. 琴键弹簧物理（重锤手感）
+       2. 方向键 / 按钮平移
+       3. 相机阻尼平滑
+       4. 灯光呼吸
+     =================================================================== */
   var clock = new THREE.Clock();
-  var SUBSTEPS = 4;
+  var SUBSTEPS = 4; // 物理子步数，提高稳定性
 
   function animate() {
     requestAnimationFrame(animate);
 
+    // 限制单帧 dt，防止切后台回来时物理爆炸
     var dt = Math.min(clock.getDelta(), 0.05);
     var h = dt / SUBSTEPS;
 
+    // —— 1. 琴键弹簧-阻尼物理 ——
+    // 按下时用大刚度、大阻尼，模拟琴槌快速击弦；
+    // 松开时用小刚度、小阻尼，产生回弹过冲，形成重锤手感。
     for (var ki = 0; ki < keys.length; ki++) {
       var k = keys[ki];
       var target  = k.pressed ? PRESS_ANGLE * k.pressDepth : 0;
@@ -1223,20 +1463,24 @@ function startPiano() {
       var damping = k.pressed ? 58 : 34;
 
       for (var s = 0; s < SUBSTEPS; s++) {
+        // 弹簧力：F = (target - angle) * stiffness - angVel * damping
         var acc = (target - k.angle) * stiff - k.angVel * damping;
         k.angVel += acc * h;
         k.angle  += k.angVel * h;
 
+        // 机械限位
         if (k.angle > target + 0.018) { k.angle = target + 0.018; if (k.angVel > 0) k.angVel = 0; }
         if (k.angle < -0.007)         { k.angle = -0.007;         if (k.angVel < 0) k.angVel = 0; }
       }
 
       k.pivot.rotation.x = k.angle;
+
+      // 按下时琴键自发光，深度越大越亮
       var g = clamp(k.angle / PRESS_ANGLE, 0, 1);
       k.mesh.material.emissiveIntensity = g * (k.black ? 1.35 : 0.62);
     }
 
-    // —— 左右平移：方向键 + 左下角按钮，合并处理 ——
+    // —— 2. 左右平移：方向键 + 左下角按钮，合并处理 ——
     var dir = 0;
     if (panKeys.left  || panBtnState.left)  dir -= 1;
     if (panKeys.right || panBtnState.right) dir += 1;
@@ -1248,13 +1492,15 @@ function startPiano() {
       userMovedCamera = true;
     }
 
-    var dk = Math.min(1, dt * 12);
+    // —— 3. 相机阻尼平滑 ——
+    var dk = Math.min(1, dt * 12); // 阻尼系数，越大跟随越快
     camState.theta  += (camState.thetaGoal  - camState.theta)  * dk;
     camState.phi    += (camState.phiGoal    - camState.phi)    * dk;
     camState.radius += (camState.radiusGoal - camState.radius) * dk;
     camState.target.lerp(camState.targetGoal, dk);
     applyCamera();
 
+    // —— 4. 灯光呼吸 ——
     var t = clock.elapsedTime;
     fillLight.intensity = 26 + Math.sin(t * 1.3) * 5;
     strip.material.emissiveIntensity = 1.35 + Math.sin(t * 1.9) * 0.3;
@@ -1262,6 +1508,7 @@ function startPiano() {
     renderer.render(scene, camera);
   }
 
+  // 移除加载层
   var loadingEl = document.getElementById('loading');
   if (loadingEl) {
     loadingEl.style.opacity = '0';
@@ -1270,9 +1517,12 @@ function startPiano() {
 
   animate();
 
-  /* =========================================================
-     17. 窗口尺寸变化
-     ========================================================= */
+  /* ===================================================================
+     §17 窗口尺寸变化
+     -------------------------------------------------------------------
+     用户未手动调过视角时，自动重新适配键盘宽度；
+     用户已调过则保持当前视角，只更新分辨率。
+     =================================================================== */
   var resizeTimer = null;
   window.addEventListener('resize', function () {
     camera.aspect = window.innerWidth / window.innerHeight;

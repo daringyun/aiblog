@@ -262,14 +262,12 @@
       transition: width 0.15s ease;
     }
 
-    /* 横屏提示遮罩 */
     #rotateHint {
       display: none; position: fixed; inset: 0;
       background: var(--loading-bg); z-index: 150;
       align-items: center; justify-content: center;
       color: var(--text); text-align: center;
-      padding: 24px;
-      box-sizing: border-box;
+      padding: 24px; box-sizing: border-box;
     }
     #rotateHint .rotate-icon {
       font-size: 56px; margin-bottom: 16px;
@@ -393,24 +391,20 @@
     import CameraControls from 'camera-controls';
 
     // ============================================================
-    // 0. 安全存储封装（兼容 sandboxed iframe）
+    // 0. 安全存储封装
     // ============================================================
     const safeStorage = (function () {
       const memoryStore = Object.create(null);
-
       function tryStorage(type) {
         try {
           const s = window[type];
           if (!s) return null;
-          const testKey = '__storage_test__';
-          s.setItem(testKey, '1');
-          s.removeItem(testKey);
+          const k = '__storage_test__';
+          s.setItem(k, '1');
+          s.removeItem(k);
           return s;
-        } catch (e) {
-          return null;
-        }
+        } catch (e) { return null; }
       }
-
       const local = tryStorage('localStorage');
       const session = tryStorage('sessionStorage');
       const backend = local || session || null;
@@ -428,15 +422,11 @@
         setItem: function (key, value) {
           value = String(value);
           memoryStore[key] = value;
-          try {
-            if (backend) backend.setItem(key, value);
-          } catch (e) {}
+          try { if (backend) backend.setItem(key, value); } catch (e) {}
         },
         removeItem: function (key) {
           delete memoryStore[key];
-          try {
-            if (backend) backend.removeItem(key);
-          } catch (e) {}
+          try { if (backend) backend.removeItem(key); } catch (e) {}
         }
       };
     })();
@@ -542,7 +532,6 @@
     function clampFontScale(v) {
       return Math.max(MIN_FONT_SCALE, Math.min(MAX_FONT_SCALE, v));
     }
-
     let fontScale = parseFloat(safeStorage.getItem('calendar-font-scale'));
     if (isNaN(fontScale)) fontScale = DEFAULT_FONT_SCALE;
     fontScale = clampFontScale(fontScale);
@@ -584,30 +573,27 @@
     const canvasEl = renderer.domElement;
 
     // ============================================================
-    // 6. 相机控制（关键修复：TOUCH_DOLLY_TRUCK）
+    // 6. camera-controls —— 只处理鼠标，触摸全部手动接管
     // ============================================================
     CameraControls.install({ THREE });
 
     const cameraControls = new CameraControls(camera, canvasEl);
 
+    // 鼠标：拖动平移（camera-controls 处理）
     cameraControls.mouseButtons.left = CameraControls.ACTION.TRUCK;
     cameraControls.mouseButtons.right = CameraControls.ACTION.TRUCK;
     cameraControls.mouseButtons.wheel = CameraControls.ACTION.NONE;
     cameraControls.mouseButtons.middle = CameraControls.ACTION.NONE;
 
-    // 触摸手势
-    cameraControls.touches.one = CameraControls.ACTION.TOUCH_TRUCK;
-    // ↓ 修复：camera-controls 的 ACTION 枚举里没有 TOUCH_DOLLY_PAN
-    //   正确的是 TOUCH_DOLLY_TRUCK（双指 Dolly 缩放 + Truck 平移）
-    cameraControls.touches.two = CameraControls.ACTION.TOUCH_DOLLY_TRUCK;
-    cameraControls.touches.three = CameraControls.ACTION.TOUCH_TRUCK;
+    // ⚠️ 关键：禁用 camera-controls 的全部触摸处理
+    // 正交相机的 dolly/zoom 手势在库内部存在兼容问题，
+    // 我们改为完全手动实现，保证双指缩放稳定可用。
+    cameraControls.touches.one = CameraControls.ACTION.NONE;
+    cameraControls.touches.two = CameraControls.ACTION.NONE;
+    cameraControls.touches.three = CameraControls.ACTION.NONE;
 
     cameraControls.smoothTime = 0.2;
     cameraControls.draggingSmoothTime = 0.08;
-    // 双指灵敏度提高
-    cameraControls.dollySpeed = 1.0;
-    cameraControls.truckSpeed = 1.0;
-
     cameraControls.minZoom = baseZoom / 3;
     cameraControls.maxZoom = baseZoom * 8;
     cameraControls.setBoundary(new THREE.Box3(
@@ -618,7 +604,156 @@
     cameraControls.setLookAt(0, 0, 10, 0, 0, 0, false);
     cameraControls.update(0);
 
-    // 滚轮缩放
+    // ---- 应用相机状态（同步到 camera-controls 的内部状态）----
+    // 使用 setLookAt(false) 和 zoomTo(false) 保证同步，这样
+    // cameraControls.update() 不会用 damping 覆盖我们手动设置的位置。
+    function applyCamera(x, y, zoom) {
+      const z = Math.max(
+        cameraControls.minZoom,
+        Math.min(cameraControls.maxZoom, zoom)
+      );
+      cameraControls.setLookAt(x, y, 10, x, y, 0, false);
+      cameraControls.zoomTo(z, false);
+    }
+
+    // ============================================================
+    // 7. 手动触摸控制（单指平移 / 双指缩放 + 平移）
+    // ============================================================
+    let touchDrag = null;   // 单指拖动状态
+    let touchPinch = null;  // 双指缩放状态
+
+    function getRect() {
+      return canvasEl.getBoundingClientRect();
+    }
+
+    canvasEl.addEventListener('touchstart', (e) => {
+      if (e.touches.length === 1) {
+        const t = e.touches[0];
+        touchDrag = {
+          startX: t.clientX,
+          startY: t.clientY,
+          camX: camera.position.x,
+          camY: camera.position.y
+        };
+        touchPinch = null;
+      } else if (e.touches.length === 2) {
+        const t0 = e.touches[0];
+        const t1 = e.touches[1];
+        touchDrag = null;
+        touchPinch = {
+          startDist: Math.hypot(
+            t0.clientX - t1.clientX,
+            t0.clientY - t1.clientY
+          ),
+          startCx: (t0.clientX + t1.clientX) / 2,
+          startCy: (t0.clientY + t1.clientY) / 2,
+          startZoom: camera.zoom,
+          startCamX: camera.position.x,
+          startCamY: camera.position.y
+        };
+      }
+    }, { passive: true });
+
+    canvasEl.addEventListener('touchmove', (e) => {
+      // ---- 单指平移 ----
+      if (e.touches.length === 1 && touchDrag) {
+        e.preventDefault();
+        const t = e.touches[0];
+        const rect = getRect();
+
+        const dxScreen = t.clientX - touchDrag.startX;
+        const dyScreen = t.clientY - touchDrag.startY;
+
+        // 屏幕像素位移 → 世界单位位移
+        const visibleW = (camera.right - camera.left) / camera.zoom;
+        const visibleH = (camera.top - camera.bottom) / camera.zoom;
+        const dxWorld = -(dxScreen / rect.width) * visibleW;
+        const dyWorld = (dyScreen / rect.height) * visibleH;
+
+        applyCamera(
+          touchDrag.camX + dxWorld,
+          touchDrag.camY + dyWorld,
+          camera.zoom
+        );
+        return;
+      }
+
+      // ---- 双指缩放 + 平移（以双指中心为锚点）----
+      if (e.touches.length === 2 && touchPinch) {
+        e.preventDefault();
+        const t0 = e.touches[0];
+        const t1 = e.touches[1];
+
+        const dist = Math.hypot(
+          t0.clientX - t1.clientX,
+          t0.clientY - t1.clientY
+        );
+        const cx = (t0.clientX + t1.clientX) / 2;
+        const cy = (t0.clientY + t1.clientY) / 2;
+        const rect = getRect();
+
+        if (touchPinch.startDist < 1) return; // 防御：两指重合
+
+        // 缩放倍数
+        const scaleFactor = dist / touchPinch.startDist;
+        const newZoom = Math.max(
+          cameraControls.minZoom,
+          Math.min(cameraControls.maxZoom, touchPinch.startZoom * scaleFactor)
+        );
+
+        // 计算起始双指中心对应的世界坐标（在 z=0 平面上）
+        const ndcStartX = ((touchPinch.startCx - rect.left) / rect.width) * 2 - 1;
+        const ndcStartY = -((touchPinch.startCy - rect.top) / rect.height) * 2 + 1;
+
+        const visibleWStart = (camera.right - camera.left) / touchPinch.startZoom;
+        const visibleHStart = (camera.top - camera.bottom) / touchPinch.startZoom;
+
+        const anchorWorldX =
+          touchPinch.startCamX + ndcStartX * visibleWStart / 2;
+        const anchorWorldY =
+          touchPinch.startCamY + ndcStartY * visibleHStart / 2;
+
+        // 当前双指中心的 NDC（用作平移目标位置）
+        const ndcNowX = ((cx - rect.left) / rect.width) * 2 - 1;
+        const ndcNowY = -((cy - rect.top) / rect.height) * 2 + 1;
+
+        // 让 anchorWorld 仍然位于当前双指中心 → 反推相机位置
+        const visibleWNew = (camera.right - camera.left) / newZoom;
+        const visibleHNew = (camera.top - camera.bottom) / newZoom;
+
+        const newCamX = anchorWorldX - ndcNowX * visibleWNew / 2;
+        const newCamY = anchorWorldY - ndcNowY * visibleHNew / 2;
+
+        applyCamera(newCamX, newCamY, newZoom);
+        return;
+      }
+    }, { passive: false });
+
+    canvasEl.addEventListener('touchend', (e) => {
+      if (e.touches.length === 0) {
+        touchDrag = null;
+        touchPinch = null;
+      } else if (e.touches.length === 1) {
+        // 从双指变单指：重新记录单指拖动起点
+        touchPinch = null;
+        const t = e.touches[0];
+        touchDrag = {
+          startX: t.clientX,
+          startY: t.clientY,
+          camX: camera.position.x,
+          camY: camera.position.y
+        };
+      }
+    }, { passive: true });
+
+    canvasEl.addEventListener('touchcancel', () => {
+      touchDrag = null;
+      touchPinch = null;
+    }, { passive: true });
+
+    // ============================================================
+    // 8. 滚轮缩放（PC）
+    // ============================================================
     canvasEl.addEventListener('wheel', (e) => {
       e.preventDefault();
       const intensity = Math.min(Math.abs(e.deltaY) / 100, 3);
@@ -634,7 +769,7 @@
     }, { passive: false });
 
     // ============================================================
-    // 7. 日期数据
+    // 9. 日期数据
     // ============================================================
     const SolarLib = window.Solar;
     const HolidayUtilLib = window.HolidayUtil;
@@ -707,12 +842,12 @@
     }
 
     // ============================================================
-    // 8. 选中状态
+    // 10. 选中状态
     // ============================================================
     let selected = null;
 
     // ============================================================
-    // 9. 绘制月份卡片
+    // 11. 绘制
     // ============================================================
     function drawMonthToCanvas(ctx, W, H, year, month, sel, theme, themeName, fs) {
       ctx.fillStyle = theme.cardBg;
@@ -826,7 +961,7 @@
     }
 
     // ============================================================
-    // 10. 卡片与 Hitbox
+    // 12. 卡片与 Hitbox
     // ============================================================
     let monthMeshes = [];
     let hitboxes = [];
@@ -900,7 +1035,7 @@
     }
 
     // ============================================================
-    // 11. 局部重绘
+    // 13. 局部重绘
     // ============================================================
     function redrawMonthCard(year, month) {
       const mesh = monthMeshes.find(
@@ -946,7 +1081,7 @@
     }
 
     // ============================================================
-    // 12. 异步分帧构建
+    // 14. 异步分帧构建
     // ============================================================
     const loadingEl = document.getElementById('loading');
     const loadingText = document.getElementById('loadingText');
@@ -1027,7 +1162,7 @@
     }
 
     // ============================================================
-    // 13. 全屏 / 横屏
+    // 15. 全屏 / 横屏
     // ============================================================
     const fullscreenBtn = document.getElementById('fullscreenToggle');
     const rotateHint = document.getElementById('rotateHint');
@@ -1036,7 +1171,6 @@
     const rotateFeedback = document.getElementById('rotateFeedback');
 
     let rotateHintDismissed = false;
-    let rotateHintAutoShown = false;
 
     function isFullscreenActive() {
       return !!(document.fullscreenElement || document.webkitFullscreenElement);
@@ -1057,14 +1191,11 @@
         } else {
           return false;
         }
-        // 尝试锁定横屏（需要全屏后才能调用，很多浏览器需要用户手势）
         try {
           if (screen.orientation && screen.orientation.lock) {
             await screen.orientation.lock('landscape');
           }
-        } catch (e) {
-          // 不支持 orientation.lock，忽略（iOS 上常见）
-        }
+        } catch (e) {}
         return true;
       } catch (e) {
         return false;
@@ -1078,11 +1209,8 @@
             screen.orientation.unlock();
           }
         } catch (e) {}
-        if (document.exitFullscreen) {
-          await document.exitFullscreen();
-        } else if (document.webkitExitFullscreen) {
-          await document.webkitExitFullscreen();
-        }
+        if (document.exitFullscreen) await document.exitFullscreen();
+        else if (document.webkitExitFullscreen) await document.webkitExitFullscreen();
         return true;
       } catch (e) {
         return false;
@@ -1090,12 +1218,8 @@
     }
 
     async function toggleFullscreen() {
-      if (isFullscreenActive()) {
-        await exitFullscreen();
-      } else {
-        await enterFullscreen();
-      }
-      // 全屏状态变化后刷新尺寸
+      if (isFullscreenActive()) await exitFullscreen();
+      else await enterFullscreen();
       setTimeout(onResize, 200);
     }
 
@@ -1104,7 +1228,6 @@
     document.addEventListener('fullscreenchange', updateFullscreenIcon);
     document.addEventListener('webkitfullscreenchange', updateFullscreenIcon);
 
-    // 遮罩按钮：进入全屏横屏
     rotateActionBtn.onclick = async (e) => {
       e.stopPropagation();
       rotateFeedback.textContent = '正在进入全屏…';
@@ -1115,12 +1238,11 @@
         rotateFeedback.textContent = '';
         setTimeout(onResize, 200);
       } else {
-        rotateFeedback.textContent = '当前浏览器不支持全屏，请手动旋转手机横屏';
+        rotateFeedback.textContent = '当前浏览器不支持全屏，请手动旋转手机';
         setTimeout(() => { rotateFeedback.textContent = ''; }, 4000);
       }
     };
 
-    // 遮罩按钮：继续竖屏
     rotateSkipBtn.onclick = (e) => {
       e.stopPropagation();
       rotateHint.style.display = 'none';
@@ -1128,7 +1250,7 @@
     };
 
     // ============================================================
-    // 14. 字号调节 UI
+    // 16. 字号调节 UI
     // ============================================================
     const fontToggleBtn = document.getElementById('fontToggle');
     const fontPanel = document.getElementById('fontPanel');
@@ -1185,7 +1307,7 @@
     updateFontUI();
 
     // ============================================================
-    // 15. 主题切换
+    // 17. 主题切换
     // ============================================================
     const themeToggleBtn = document.getElementById('themeToggle');
 
@@ -1216,7 +1338,7 @@
     scene.background.set(currentTheme.sceneBg);
 
     // ============================================================
-    // 16. 详情面板
+    // 18. 详情面板
     // ============================================================
     const detailPanel = document.getElementById('detailPanel');
 
@@ -1293,7 +1415,7 @@
     }
 
     // ============================================================
-    // 17. 交互（射线拾取 + 拖动判定）
+    // 19. 指针交互（点击检测 + 鼠标悬停）
     // ============================================================
     const raycaster = new THREE.Raycaster();
     const pointerNDC = new THREE.Vector2();
@@ -1322,7 +1444,6 @@
         pointerDownInfo = { x: e.clientX, y: e.clientY };
         isDragging = false;
       } else {
-        // 双指按下 → 取消点击判定，允许相机接管双指手势
         pointerDownInfo = null;
         isDragging = true;
         currentHoverKey = '';
@@ -1397,7 +1518,7 @@
     });
 
     // ============================================================
-    // 18. 动画循环
+    // 20. 动画循环
     // ============================================================
     const clock = new THREE.Clock();
     const zoomLabel = document.getElementById('zoomLabel');
@@ -1434,7 +1555,7 @@
     }
 
     // ============================================================
-    // 19. 年份切换
+    // 21. 年份切换
     // ============================================================
     let currentYear = new Date().getFullYear();
     const yearLabel = document.getElementById('yearLabel');
@@ -1457,7 +1578,7 @@
     };
 
     // ============================================================
-    // 20. 缩放按钮
+    // 22. 缩放按钮
     // ============================================================
     document.getElementById('zoomIn').onclick = () => {
       const z = Math.min(camera.zoom * 1.4, cameraControls.maxZoom);
@@ -1475,7 +1596,7 @@
     };
 
     // ============================================================
-    // 21. 响应式（含横屏提示自动显示）
+    // 23. 响应式
     // ============================================================
     function isTouchDevice() {
       return ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
@@ -1505,24 +1626,21 @@
       cameraControls.maxZoom = baseZoom * 8;
       updateZoomLabel();
 
-      // 横屏提示：仅在触摸设备 + 竖屏 + 窄屏 + 用户未点击过"继续竖屏"时显示
+      // 触摸设备竖屏时显示横屏提示
       if (isTouchDevice() && h > w && w < 768 && !rotateHintDismissed) {
         rotateHint.style.display = 'flex';
-        rotateHintAutoShown = true;
       } else {
         rotateHint.style.display = 'none';
-        rotateHintAutoShown = false;
       }
     }
 
     window.addEventListener('resize', onResize);
     window.addEventListener('orientationchange', () => {
-      // iOS 上 orientationchange 触发时尺寸还没稳定，稍等
       setTimeout(onResize, 300);
     });
 
     // ============================================================
-    // 22. 启动
+    // 24. 启动
     // ============================================================
     updateYearLabel();
     updateFullscreenIcon();

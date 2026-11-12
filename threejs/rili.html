@@ -126,12 +126,13 @@
       margin: 0 4px; flex-shrink: 0;
     }
     #zoomReset { font-size: 13px !important; padding: 0 12px !important; }
-    #themeToggle, #fontToggle {
+    #themeToggle, #fontToggle, #fullscreenToggle {
       font-size: 18px !important;
       padding: 0 !important;
       width: 34px;
     }
     #fontToggle { font-size: 15px !important; font-weight: 700; }
+    #fullscreenToggle { font-size: 16px !important; }
 
     #fontPanel {
       position: fixed;
@@ -261,19 +262,63 @@
       transition: width 0.15s ease;
     }
 
+    /* 横屏提示遮罩 */
     #rotateHint {
       display: none; position: fixed; inset: 0;
       background: var(--loading-bg); z-index: 150;
       align-items: center; justify-content: center;
-      color: var(--text); text-align: center; cursor: pointer;
+      color: var(--text); text-align: center;
+      padding: 24px;
+      box-sizing: border-box;
     }
-    #rotateHint .icon { font-size: 56px; margin-bottom: 16px; }
-    #rotateHint p { font-size: 15px; color: var(--text-muted); }
+    #rotateHint .rotate-icon {
+      font-size: 56px; margin-bottom: 16px;
+      display: inline-block;
+      animation: rotateSpin 3s ease-in-out infinite;
+    }
+    @keyframes rotateSpin {
+      0%, 30% { transform: rotate(0deg); }
+      60%, 90% { transform: rotate(90deg); }
+      100% { transform: rotate(0deg); }
+    }
+    #rotateHint p {
+      font-size: 15px; color: var(--text-muted);
+      margin: 0 0 24px; line-height: 1.6;
+    }
+    #rotateHint .rotate-actions {
+      display: flex; flex-direction: column;
+      gap: 12px; align-items: center;
+    }
+    #rotateHint .rotate-btn {
+      background: #3b82f6; border: none; color: white;
+      padding: 12px 32px; border-radius: 999px;
+      font-size: 15px; font-weight: 600;
+      cursor: pointer; transition: background 0.15s;
+      box-shadow: 0 4px 16px rgba(59, 130, 246, 0.4);
+    }
+    #rotateHint .rotate-btn:hover { background: #2563eb; }
+    #rotateHint .rotate-btn:active { background: #1d4ed8; }
+    #rotateHint .rotate-skip {
+      background: transparent;
+      border: 1px solid var(--panel-border);
+      color: var(--text-muted);
+      padding: 10px 24px; border-radius: 999px;
+      font-size: 13px; cursor: pointer;
+      transition: color 0.15s, border-color 0.15s;
+    }
+    #rotateHint .rotate-skip:hover {
+      color: var(--text);
+      border-color: var(--text-muted);
+    }
+    #rotateFeedback {
+      font-size: 12px; color: #f59e0b;
+      margin-top: 16px; min-height: 16px;
+    }
 
     @media (max-width: 480px) {
       #controls { top: 10px; padding: 6px 8px; gap: 4px; }
       #controls button { height: 30px; min-width: 30px; padding: 0 10px; font-size: 14px; }
-      #themeToggle, #fontToggle { width: 30px; font-size: 15px !important; }
+      #themeToggle, #fontToggle, #fullscreenToggle { width: 30px; font-size: 15px !important; }
       #yearLabel { font-size: 15px; min-width: 58px; }
       #zoomLabel { font-size: 11px; min-width: 36px; }
       #detailPanel { min-width: 200px; max-width: 260px; font-size: 12px; }
@@ -305,10 +350,11 @@
     <button id="zoomOut" title="缩小">−</button>
     <span id="zoomLabel">100%</span>
     <button id="zoomIn" title="放大">+</button>
-    <button id="zoomReset" title="重置缩放为默认视图">重置缩放</button>
+    <button id="zoomReset" title="重置缩放">重置</button>
     <div class="divider"></div>
     <button id="fontToggle" title="调节字体大小">Aa</button>
     <button id="themeToggle" title="切换主题">☀️</button>
+    <button id="fullscreenToggle" title="全屏">⛶</button>
   </div>
 
   <div id="fontPanel" class="hidden">
@@ -330,8 +376,13 @@
 
   <div id="rotateHint">
     <div>
-      <div class="icon">⟳</div>
-      <p>请横屏浏览<br><span style="font-size:12px;opacity:.6">点击任意处继续</span></p>
+      <div class="rotate-icon">⟳</div>
+      <p>建议横屏浏览<br>以获得最佳体验</p>
+      <div class="rotate-actions">
+        <button class="rotate-btn" id="rotateActionBtn">进入全屏横屏</button>
+        <button class="rotate-skip" id="rotateSkipBtn">继续竖屏浏览</button>
+      </div>
+      <div id="rotateFeedback"></div>
     </div>
   </div>
 
@@ -344,11 +395,6 @@
     // ============================================================
     // 0. 安全存储封装（兼容 sandboxed iframe）
     // ============================================================
-    // 某些环境（如 sandboxed iframe、Safari 无痕模式、跨域嵌入）中
-    // 访问 localStorage 会抛 SecurityError。这里做三层降级：
-    //   1. 优先用 localStorage（持久化）
-    //   2. 失败降级到 sessionStorage（同标签页刷新保留）
-    //   3. 再失败降级到内存 Map（仅当前会话有效）
     const safeStorage = (function () {
       const memoryStore = Object.create(null);
 
@@ -356,7 +402,6 @@
         try {
           const s = window[type];
           if (!s) return null;
-          // 试读试写，触发潜在 SecurityError
           const testKey = '__storage_test__';
           s.setItem(testKey, '1');
           s.removeItem(testKey);
@@ -377,7 +422,7 @@
               const v = backend.getItem(key);
               if (v !== null) return v;
             }
-          } catch (e) { /* ignore */ }
+          } catch (e) {}
           return key in memoryStore ? memoryStore[key] : null;
         },
         setItem: function (key, value) {
@@ -385,13 +430,13 @@
           memoryStore[key] = value;
           try {
             if (backend) backend.setItem(key, value);
-          } catch (e) { /* ignore */ }
+          } catch (e) {}
         },
         removeItem: function (key) {
           delete memoryStore[key];
           try {
             if (backend) backend.removeItem(key);
-          } catch (e) { /* ignore */ }
+          } catch (e) {}
         }
       };
     })();
@@ -486,7 +531,6 @@
       light: { lunar: '#b45309', solar: '#6d28d9', holiday: '#dc2626' }
     };
 
-    // 使用 safeStorage 读取主题
     let currentThemeName = safeStorage.getItem('calendar-theme') || 'dark';
     if (!THEMES[currentThemeName]) currentThemeName = 'dark';
     let currentTheme = THEMES[currentThemeName];
@@ -540,20 +584,30 @@
     const canvasEl = renderer.domElement;
 
     // ============================================================
-    // 6. 相机控制
+    // 6. 相机控制（关键修复：TOUCH_DOLLY_TRUCK）
     // ============================================================
     CameraControls.install({ THREE });
 
     const cameraControls = new CameraControls(camera, canvasEl);
+
     cameraControls.mouseButtons.left = CameraControls.ACTION.TRUCK;
     cameraControls.mouseButtons.right = CameraControls.ACTION.TRUCK;
     cameraControls.mouseButtons.wheel = CameraControls.ACTION.NONE;
     cameraControls.mouseButtons.middle = CameraControls.ACTION.NONE;
+
+    // 触摸手势
     cameraControls.touches.one = CameraControls.ACTION.TOUCH_TRUCK;
-    cameraControls.touches.two = CameraControls.ACTION.TOUCH_DOLLY_PAN;
+    // ↓ 修复：camera-controls 的 ACTION 枚举里没有 TOUCH_DOLLY_PAN
+    //   正确的是 TOUCH_DOLLY_TRUCK（双指 Dolly 缩放 + Truck 平移）
+    cameraControls.touches.two = CameraControls.ACTION.TOUCH_DOLLY_TRUCK;
     cameraControls.touches.three = CameraControls.ACTION.TOUCH_TRUCK;
+
     cameraControls.smoothTime = 0.2;
     cameraControls.draggingSmoothTime = 0.08;
+    // 双指灵敏度提高
+    cameraControls.dollySpeed = 1.0;
+    cameraControls.truckSpeed = 1.0;
+
     cameraControls.minZoom = baseZoom / 3;
     cameraControls.maxZoom = baseZoom * 8;
     cameraControls.setBoundary(new THREE.Box3(
@@ -564,6 +618,7 @@
     cameraControls.setLookAt(0, 0, 10, 0, 0, 0, false);
     cameraControls.update(0);
 
+    // 滚轮缩放
     canvasEl.addEventListener('wheel', (e) => {
       e.preventDefault();
       const intensity = Math.min(Math.abs(e.deltaY) / 100, 3);
@@ -657,7 +712,7 @@
     let selected = null;
 
     // ============================================================
-    // 9. 绘制
+    // 9. 绘制月份卡片
     // ============================================================
     function drawMonthToCanvas(ctx, W, H, year, month, sel, theme, themeName, fs) {
       ctx.fillStyle = theme.cardBg;
@@ -972,7 +1027,108 @@
     }
 
     // ============================================================
-    // 13. 字号调节 UI（使用 safeStorage）
+    // 13. 全屏 / 横屏
+    // ============================================================
+    const fullscreenBtn = document.getElementById('fullscreenToggle');
+    const rotateHint = document.getElementById('rotateHint');
+    const rotateActionBtn = document.getElementById('rotateActionBtn');
+    const rotateSkipBtn = document.getElementById('rotateSkipBtn');
+    const rotateFeedback = document.getElementById('rotateFeedback');
+
+    let rotateHintDismissed = false;
+    let rotateHintAutoShown = false;
+
+    function isFullscreenActive() {
+      return !!(document.fullscreenElement || document.webkitFullscreenElement);
+    }
+
+    function updateFullscreenIcon() {
+      fullscreenBtn.textContent = isFullscreenActive() ? '⛉' : '⛶';
+      fullscreenBtn.title = isFullscreenActive() ? '退出全屏' : '全屏';
+    }
+
+    async function enterFullscreen() {
+      try {
+        const el = document.documentElement;
+        if (el.requestFullscreen) {
+          await el.requestFullscreen();
+        } else if (el.webkitRequestFullscreen) {
+          await el.webkitRequestFullscreen();
+        } else {
+          return false;
+        }
+        // 尝试锁定横屏（需要全屏后才能调用，很多浏览器需要用户手势）
+        try {
+          if (screen.orientation && screen.orientation.lock) {
+            await screen.orientation.lock('landscape');
+          }
+        } catch (e) {
+          // 不支持 orientation.lock，忽略（iOS 上常见）
+        }
+        return true;
+      } catch (e) {
+        return false;
+      }
+    }
+
+    async function exitFullscreen() {
+      try {
+        try {
+          if (screen.orientation && screen.orientation.unlock) {
+            screen.orientation.unlock();
+          }
+        } catch (e) {}
+        if (document.exitFullscreen) {
+          await document.exitFullscreen();
+        } else if (document.webkitExitFullscreen) {
+          await document.webkitExitFullscreen();
+        }
+        return true;
+      } catch (e) {
+        return false;
+      }
+    }
+
+    async function toggleFullscreen() {
+      if (isFullscreenActive()) {
+        await exitFullscreen();
+      } else {
+        await enterFullscreen();
+      }
+      // 全屏状态变化后刷新尺寸
+      setTimeout(onResize, 200);
+    }
+
+    fullscreenBtn.onclick = toggleFullscreen;
+
+    document.addEventListener('fullscreenchange', updateFullscreenIcon);
+    document.addEventListener('webkitfullscreenchange', updateFullscreenIcon);
+
+    // 遮罩按钮：进入全屏横屏
+    rotateActionBtn.onclick = async (e) => {
+      e.stopPropagation();
+      rotateFeedback.textContent = '正在进入全屏…';
+      const ok = await enterFullscreen();
+      if (ok) {
+        rotateHint.style.display = 'none';
+        rotateHintDismissed = true;
+        rotateFeedback.textContent = '';
+        setTimeout(onResize, 200);
+      } else {
+        rotateFeedback.textContent = '当前浏览器不支持全屏，请手动旋转手机横屏';
+        setTimeout(() => { rotateFeedback.textContent = ''; }, 4000);
+      }
+    };
+
+    // 遮罩按钮：继续竖屏
+    rotateSkipBtn.onclick = (e) => {
+      e.stopPropagation();
+      rotateHint.style.display = 'none';
+      rotateHintDismissed = true;
+    };
+
+    // ============================================================
+    // 14. 字号调节 UI
     // ============================================================
     const fontToggleBtn = document.getElementById('fontToggle');
     const fontPanel = document.getElementById('fontPanel');
@@ -1029,7 +1185,7 @@
     updateFontUI();
 
     // ============================================================
-    // 14. 主题切换（使用 safeStorage）
+    // 15. 主题切换
     // ============================================================
     const themeToggleBtn = document.getElementById('themeToggle');
 
@@ -1060,7 +1216,7 @@
     scene.background.set(currentTheme.sceneBg);
 
     // ============================================================
-    // 15. 详情面板
+    // 16. 详情面板
     // ============================================================
     const detailPanel = document.getElementById('detailPanel');
 
@@ -1137,7 +1293,7 @@
     }
 
     // ============================================================
-    // 16. 交互
+    // 17. 交互（射线拾取 + 拖动判定）
     // ============================================================
     const raycaster = new THREE.Raycaster();
     const pointerNDC = new THREE.Vector2();
@@ -1166,6 +1322,7 @@
         pointerDownInfo = { x: e.clientX, y: e.clientY };
         isDragging = false;
       } else {
+        // 双指按下 → 取消点击判定，允许相机接管双指手势
         pointerDownInfo = null;
         isDragging = true;
         currentHoverKey = '';
@@ -1240,7 +1397,7 @@
     });
 
     // ============================================================
-    // 17. 动画循环
+    // 18. 动画循环
     // ============================================================
     const clock = new THREE.Clock();
     const zoomLabel = document.getElementById('zoomLabel');
@@ -1277,7 +1434,7 @@
     }
 
     // ============================================================
-    // 18. 年份切换
+    // 19. 年份切换
     // ============================================================
     let currentYear = new Date().getFullYear();
     const yearLabel = document.getElementById('yearLabel');
@@ -1300,7 +1457,7 @@
     };
 
     // ============================================================
-    // 19. 缩放按钮
+    // 20. 缩放按钮
     // ============================================================
     document.getElementById('zoomIn').onclick = () => {
       const z = Math.min(camera.zoom * 1.4, cameraControls.maxZoom);
@@ -1318,8 +1475,12 @@
     };
 
     // ============================================================
-    // 20. 响应式
+    // 21. 响应式（含横屏提示自动显示）
     // ============================================================
+    function isTouchDevice() {
+      return ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+    }
+
     function onResize() {
       const w = window.innerWidth;
       const h = window.innerHeight;
@@ -1344,23 +1505,27 @@
       cameraControls.maxZoom = baseZoom * 8;
       updateZoomLabel();
 
-      const hint = document.getElementById('rotateHint');
-      const isTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
-      if (isTouch && h > w && w < 768) hint.style.display = 'flex';
-      else hint.style.display = 'none';
+      // 横屏提示：仅在触摸设备 + 竖屏 + 窄屏 + 用户未点击过"继续竖屏"时显示
+      if (isTouchDevice() && h > w && w < 768 && !rotateHintDismissed) {
+        rotateHint.style.display = 'flex';
+        rotateHintAutoShown = true;
+      } else {
+        rotateHint.style.display = 'none';
+        rotateHintAutoShown = false;
+      }
     }
 
     window.addEventListener('resize', onResize);
-    window.addEventListener('orientationchange', () => setTimeout(onResize, 300));
-
-    document.getElementById('rotateHint').addEventListener('click', function () {
-      this.style.display = 'none';
+    window.addEventListener('orientationchange', () => {
+      // iOS 上 orientationchange 触发时尺寸还没稳定，稍等
+      setTimeout(onResize, 300);
     });
 
     // ============================================================
-    // 21. 启动
+    // 22. 启动
     // ============================================================
     updateYearLabel();
+    updateFullscreenIcon();
     onResize();
     updateZoomLabel();
     animate();

@@ -1,0 +1,1370 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <title>Three.js 2D 万年历</title>
+
+  <style>
+    :root {
+      --bg: #0f172a;
+      --panel-bg: rgba(30, 41, 59, 0.92);
+      --panel-border: rgba(148, 163, 184, 0.12);
+      --text: #f1f5f9;
+      --text-muted: #94a3b8;
+      --btn-bg: #334155;
+      --btn-hover: #475569;
+      --btn-active: #64748b;
+      --divider: rgba(148, 163, 184, 0.25);
+      --shadow: rgba(0, 0, 0, 0.5);
+      --slider-track: #334155;
+      --slider-fill: #3b82f6;
+
+      --detail-bg: rgba(15, 23, 42, 0.96);
+      --detail-border: rgba(148, 163, 184, 0.25);
+      --detail-text: #e2e8f0;
+      --detail-title: #f1f5f9;
+      --detail-divider: rgba(148, 163, 184, 0.15);
+      --detail-lunar: #fbbf24;
+      --detail-ganzhi: #94a3b8;
+      --detail-jieqi: #22d3ee;
+      --detail-festival: #f87171;
+      --detail-holiday: #4ade80;
+      --detail-work: #fb923c;
+      --detail-yi: #4ade80;
+      --detail-ji: #f87171;
+
+      --loading-bg: #0f172a;
+      --spinner-track: #334155;
+      --spinner-color: #3b82f6;
+      --progress-bg: #334155;
+      --progress-fill: #3b82f6;
+    }
+
+    body[data-theme="light"] {
+      --bg: #e2e8f0;
+      --panel-bg: rgba(255, 255, 255, 0.94);
+      --panel-border: rgba(100, 116, 139, 0.22);
+      --text: #0f172a;
+      --text-muted: #64748b;
+      --btn-bg: #e2e8f0;
+      --btn-hover: #cbd5e1;
+      --btn-active: #94a3b8;
+      --divider: rgba(100, 116, 139, 0.3);
+      --shadow: rgba(0, 0, 0, 0.12);
+      --slider-track: #cbd5e1;
+      --slider-fill: #3b82f6;
+
+      --detail-bg: rgba(255, 255, 255, 0.97);
+      --detail-border: rgba(100, 116, 139, 0.28);
+      --detail-text: #334155;
+      --detail-title: #0f172a;
+      --detail-divider: rgba(100, 116, 139, 0.2);
+      --detail-lunar: #b45309;
+      --detail-ganzhi: #64748b;
+      --detail-jieqi: #0891b2;
+      --detail-festival: #dc2626;
+      --detail-holiday: #16a34a;
+      --detail-work: #ea580c;
+      --detail-yi: #16a34a;
+      --detail-ji: #dc2626;
+
+      --loading-bg: #e2e8f0;
+      --spinner-track: #cbd5e1;
+      --spinner-color: #3b82f6;
+      --progress-bg: #cbd5e1;
+      --progress-fill: #3b82f6;
+    }
+
+    html, body {
+      margin: 0; height: 100%; overflow: hidden;
+      overscroll-behavior: none; touch-action: none;
+      background: var(--bg);
+      color: var(--text);
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      transition: background 0.25s ease;
+    }
+    #app { width: 100vw; height: 100vh; height: 100dvh; }
+
+    #controls {
+      position: fixed; top: 14px; left: 50%;
+      transform: translateX(-50%);
+      z-index: 10;
+      display: flex; align-items: center; gap: 6px;
+      background: var(--panel-bg);
+      backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+      padding: 8px 12px; border-radius: 999px;
+      color: var(--text); border: 1px solid var(--panel-border);
+      box-shadow: 0 6px 24px var(--shadow);
+      user-select: none; max-width: calc(100vw - 24px);
+      overflow-x: auto; scrollbar-width: none;
+      transition: background 0.25s ease, border-color 0.25s ease;
+    }
+    #controls::-webkit-scrollbar { display: none; }
+    #controls button {
+      background: var(--btn-bg); border: none; color: var(--text);
+      padding: 0 12px; height: 34px; min-width: 34px;
+      border-radius: 999px; font-size: 16px; font-weight: 600;
+      cursor: pointer; transition: background 0.15s, color 0.25s;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+    #controls button:hover { background: var(--btn-hover); }
+    #controls button:active { background: var(--btn-active); }
+    #yearLabel {
+      font-size: 17px; font-weight: 700; min-width: 68px;
+      text-align: center; letter-spacing: 0.5px; flex-shrink: 0;
+    }
+    #zoomLabel {
+      font-size: 13px; color: var(--text-muted); min-width: 44px;
+      text-align: center; font-variant-numeric: tabular-nums;
+      flex-shrink: 0;
+    }
+    #controls .divider {
+      width: 1px; height: 22px;
+      background: var(--divider);
+      margin: 0 4px; flex-shrink: 0;
+    }
+    #zoomReset { font-size: 13px !important; padding: 0 12px !important; }
+    #themeToggle, #fontToggle {
+      font-size: 18px !important;
+      padding: 0 !important;
+      width: 34px;
+    }
+    #fontToggle { font-size: 15px !important; font-weight: 700; }
+
+    #fontPanel {
+      position: fixed;
+      top: 64px; left: 50%;
+      transform: translateX(-50%);
+      z-index: 20;
+      display: flex; align-items: center; gap: 10px;
+      background: var(--panel-bg);
+      backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+      padding: 10px 16px; border-radius: 999px;
+      color: var(--text); border: 1px solid var(--panel-border);
+      box-shadow: 0 6px 24px var(--shadow);
+      user-select: none;
+      transition: opacity 0.15s ease, transform 0.15s ease,
+                  background 0.25s ease, border-color 0.25s ease;
+      white-space: nowrap;
+    }
+    #fontPanel.hidden {
+      opacity: 0; visibility: hidden;
+      transform: translateX(-50%) translateY(-6px);
+    }
+    #fontPanel .font-label { font-size: 13px; color: var(--text-muted); }
+    #fontPanel .font-btn {
+      background: var(--btn-bg); border: none; color: var(--text);
+      width: 28px; height: 28px; min-width: 28px;
+      border-radius: 50%; font-size: 16px; font-weight: 700;
+      cursor: pointer; transition: background 0.15s;
+      display: flex; align-items: center; justify-content: center;
+      padding: 0;
+    }
+    #fontPanel .font-btn:hover { background: var(--btn-hover); }
+    #fontPanel .font-btn:active { background: var(--btn-active); }
+    #fontPanel .font-reset {
+      width: auto; padding: 0 12px; border-radius: 999px;
+      font-size: 13px !important; height: 28px;
+    }
+    #fontPercent {
+      font-size: 14px; font-weight: 700;
+      min-width: 46px; text-align: center;
+      color: var(--text); font-variant-numeric: tabular-nums;
+    }
+    #fontSlider {
+      -webkit-appearance: none; appearance: none;
+      width: 140px; height: 4px;
+      background: var(--slider-track);
+      border-radius: 2px;
+      outline: none; cursor: pointer;
+    }
+    #fontSlider::-webkit-slider-thumb {
+      -webkit-appearance: none; appearance: none;
+      width: 16px; height: 16px; border-radius: 50%;
+      background: var(--slider-fill);
+      cursor: pointer;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+      transition: transform 0.1s;
+    }
+    #fontSlider::-webkit-slider-thumb:active { transform: scale(1.2); }
+    #fontSlider::-moz-range-thumb {
+      width: 16px; height: 16px; border-radius: 50%;
+      background: var(--slider-fill);
+      cursor: pointer; border: none;
+    }
+    #fontSlider::-moz-range-track {
+      background: var(--slider-track);
+      height: 4px; border-radius: 2px;
+    }
+
+    #detailPanel {
+      position: fixed; z-index: 50;
+      min-width: 220px; max-width: 300px;
+      background: var(--detail-bg);
+      backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+      border: 1px solid var(--detail-border);
+      border-radius: 14px; padding: 14px 16px;
+      color: var(--detail-text); font-size: 13px; line-height: 1.6;
+      box-shadow: 0 8px 32px var(--shadow);
+      pointer-events: none;
+      transition: opacity 0.12s ease, background 0.25s ease, border-color 0.25s ease;
+      left: 0; top: 0;
+    }
+    #detailPanel.hidden { opacity: 0; visibility: hidden; }
+
+    .d-date {
+      font-size: 16px; font-weight: 700; color: var(--detail-title);
+      margin-bottom: 6px; padding-bottom: 6px;
+      border-bottom: 1px solid var(--detail-divider);
+    }
+    .d-lunar { color: var(--detail-lunar); font-weight: 600; }
+    .d-ganzhi { color: var(--detail-ganzhi); font-size: 12px; margin-top: 2px; }
+    .d-jieqi { color: var(--detail-jieqi); margin-top: 4px; }
+    .d-festivals { color: var(--detail-festival); font-weight: 600; margin-top: 4px; }
+    .d-holiday { color: var(--detail-holiday); margin-top: 4px; }
+    .d-work { color: var(--detail-work); margin-top: 4px; }
+    .d-yiji {
+      margin-top: 8px; padding-top: 8px;
+      border-top: 1px solid var(--detail-divider);
+      font-size: 12.5px;
+    }
+    .d-yiji .yi { color: var(--detail-yi); display: block; margin-bottom: 3px; }
+    .d-yiji .ji { color: var(--detail-ji); display: block; }
+
+    #loading {
+      position: fixed; inset: 0; z-index: 200;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 16px; background: var(--loading-bg); color: var(--text-muted);
+      font-size: 15px;
+    }
+    #loading .spinner {
+      width: 40px; height: 40px;
+      border: 3px solid var(--spinner-track);
+      border-top-color: var(--spinner-color);
+      border-radius: 50%; animation: spin 0.9s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    #progressBar {
+      width: 200px; height: 4px;
+      background: var(--progress-bg);
+      border-radius: 2px; overflow: hidden;
+      margin-top: 4px;
+    }
+    #progressFill {
+      height: 100%; width: 0%;
+      background: var(--progress-fill);
+      border-radius: 2px;
+      transition: width 0.15s ease;
+    }
+
+    #rotateHint {
+      display: none; position: fixed; inset: 0;
+      background: var(--loading-bg); z-index: 150;
+      align-items: center; justify-content: center;
+      color: var(--text); text-align: center; cursor: pointer;
+    }
+    #rotateHint .icon { font-size: 56px; margin-bottom: 16px; }
+    #rotateHint p { font-size: 15px; color: var(--text-muted); }
+
+    @media (max-width: 480px) {
+      #controls { top: 10px; padding: 6px 8px; gap: 4px; }
+      #controls button { height: 30px; min-width: 30px; padding: 0 10px; font-size: 14px; }
+      #themeToggle, #fontToggle { width: 30px; font-size: 15px !important; }
+      #yearLabel { font-size: 15px; min-width: 58px; }
+      #zoomLabel { font-size: 11px; min-width: 36px; }
+      #detailPanel { min-width: 200px; max-width: 260px; font-size: 12px; }
+      .d-date { font-size: 15px; }
+      #fontPanel { top: 56px; padding: 8px 12px; gap: 8px; }
+      #fontSlider { width: 100px; }
+      #fontPanel .font-label { display: none; }
+    }
+  </style>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "camera-controls": "https://cdn.jsdelivr.net/npm/camera-controls@2.9.0/dist/camera-controls.module.js"
+    }
+  }
+  </script>
+</head>
+<body data-theme="dark">
+
+  <div id="app"></div>
+
+  <div id="controls">
+    <button id="prevYear" title="上一年">‹</button>
+    <span id="yearLabel"></span>
+    <button id="nextYear" title="下一年">›</button>
+    <div class="divider"></div>
+    <button id="zoomOut" title="缩小">−</button>
+    <span id="zoomLabel">100%</span>
+    <button id="zoomIn" title="放大">+</button>
+    <button id="zoomReset" title="重置缩放为默认视图">重置缩放</button>
+    <div class="divider"></div>
+    <button id="fontToggle" title="调节字体大小">Aa</button>
+    <button id="themeToggle" title="切换主题">☀️</button>
+  </div>
+
+  <div id="fontPanel" class="hidden">
+    <span class="font-label">字体大小</span>
+    <button class="font-btn" id="fontMinus" title="缩小">−</button>
+    <input type="range" id="fontSlider" min="85" max="125" step="5" value="100">
+    <button class="font-btn" id="fontPlus" title="放大">+</button>
+    <span id="fontPercent">100%</span>
+    <button class="font-btn font-reset" id="fontReset" title="恢复默认">重置</button>
+  </div>
+
+  <div id="detailPanel" class="hidden"></div>
+
+  <div id="loading">
+    <div class="spinner"></div>
+    <p id="loadingText">正在加载日历…</p>
+    <div id="progressBar"><div id="progressFill"></div></div>
+  </div>
+
+  <div id="rotateHint">
+    <div>
+      <div class="icon">⟳</div>
+      <p>请横屏浏览<br><span style="font-size:12px;opacity:.6">点击任意处继续</span></p>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/lunar-javascript@1.7.7/lunar.js"></script>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import CameraControls from 'camera-controls';
+
+    // ============================================================
+    // 0. 安全存储封装（兼容 sandboxed iframe）
+    // ============================================================
+    // 某些环境（如 sandboxed iframe、Safari 无痕模式、跨域嵌入）中
+    // 访问 localStorage 会抛 SecurityError。这里做三层降级：
+    //   1. 优先用 localStorage（持久化）
+    //   2. 失败降级到 sessionStorage（同标签页刷新保留）
+    //   3. 再失败降级到内存 Map（仅当前会话有效）
+    const safeStorage = (function () {
+      const memoryStore = Object.create(null);
+
+      function tryStorage(type) {
+        try {
+          const s = window[type];
+          if (!s) return null;
+          // 试读试写，触发潜在 SecurityError
+          const testKey = '__storage_test__';
+          s.setItem(testKey, '1');
+          s.removeItem(testKey);
+          return s;
+        } catch (e) {
+          return null;
+        }
+      }
+
+      const local = tryStorage('localStorage');
+      const session = tryStorage('sessionStorage');
+      const backend = local || session || null;
+
+      return {
+        getItem: function (key) {
+          try {
+            if (backend) {
+              const v = backend.getItem(key);
+              if (v !== null) return v;
+            }
+          } catch (e) { /* ignore */ }
+          return key in memoryStore ? memoryStore[key] : null;
+        },
+        setItem: function (key, value) {
+          value = String(value);
+          memoryStore[key] = value;
+          try {
+            if (backend) backend.setItem(key, value);
+          } catch (e) { /* ignore */ }
+        },
+        removeItem: function (key) {
+          delete memoryStore[key];
+          try {
+            if (backend) backend.removeItem(key);
+          } catch (e) { /* ignore */ }
+        }
+      };
+    })();
+
+    // ============================================================
+    // 1. 常量
+    // ============================================================
+    const CARD_W = 4.0;
+    const CARD_H = 3.5;
+    const GAP_X = 0.6;
+    const GAP_Y = 0.6;
+    const COLS = 4;
+    const ROWS = 3;
+    const FRUSTUM_SIZE = 20;
+
+    const TOTAL_W = COLS * CARD_W + (COLS - 1) * GAP_X;
+    const TOTAL_H = ROWS * CARD_H + (ROWS - 1) * GAP_Y;
+
+    const DPR = Math.min(window.devicePixelRatio || 1, 1.5);
+    const CANVAS_W = 960;
+    const CANVAS_H = 840;
+
+    const GRID_START_X = 47;
+    const GRID_CELL_W = (CANVAS_W - 94) / 7;
+    const GRID_START_Y = 159;
+    const GRID_CELL_H = (CANVAS_H - GRID_START_Y - 22) / 6;
+
+    const ROW_DAY_Y = -32;
+    const ROW_LUNAR_Y = 2;
+    const ROW_FEST_Y = 36;
+
+    const BASE_TITLE_FONT = 51;
+    const BASE_HEADER_FONT = 23;
+    const BASE_DAY_FONT = 32;
+    const BASE_LUNAR_FONT = 23;
+    const BASE_FEST_FONT = 28;
+
+    const MIN_FONT_SCALE = 0.85;
+    const MAX_FONT_SCALE = 1.25;
+    const DEFAULT_FONT_SCALE = 1.0;
+
+    const WEEK_DAYS = ['日', '一', '二', '三', '四', '五', '六'];
+
+    // ============================================================
+    // 2. 主题定义
+    // ============================================================
+    const THEMES = {
+      dark: {
+        sceneBg: 0x0f172a,
+        cardBg: '#1e293b',
+        cardBorder: 'rgba(148,163,184,0.18)',
+        title: '#f1f5f9',
+        weekHeader: '#94a3b8',
+        weekHeaderWeekend: '#f87171',
+        dayNormal: '#f1f5f9',
+        dayWeekend: '#f87171',
+        todayBg: 'rgba(59,130,246,0.9)',
+        todayText: '#ffffff',
+        lunar: '#94a3b8',
+        lunarJieqi: '#22d3ee',
+        lunarToday: '#dbeafe',
+        festivalToday: '#fef3c7',
+        grid: 'rgba(148,163,184,0.07)',
+        selectedBorder: '#fbbf24',
+        accentL: 58,
+        accentS: 72
+      },
+      light: {
+        sceneBg: 0xf1f5f9,
+        cardBg: '#ffffff',
+        cardBorder: 'rgba(100,116,139,0.22)',
+        title: '#0f172a',
+        weekHeader: '#64748b',
+        weekHeaderWeekend: '#ef4444',
+        dayNormal: '#1e293b',
+        dayWeekend: '#ef4444',
+        todayBg: 'rgba(59,130,246,0.95)',
+        todayText: '#ffffff',
+        lunar: '#64748b',
+        lunarJieqi: '#0891b2',
+        lunarToday: '#dbeafe',
+        festivalToday: '#92400e',
+        grid: 'rgba(100,116,139,0.1)',
+        selectedBorder: '#f59e0b',
+        accentL: 50,
+        accentS: 70
+      }
+    };
+
+    const FESTIVAL_COLORS = {
+      dark: { lunar: '#f59e0b', solar: '#a78bfa', holiday: '#ef4444' },
+      light: { lunar: '#b45309', solar: '#6d28d9', holiday: '#dc2626' }
+    };
+
+    // 使用 safeStorage 读取主题
+    let currentThemeName = safeStorage.getItem('calendar-theme') || 'dark';
+    if (!THEMES[currentThemeName]) currentThemeName = 'dark';
+    let currentTheme = THEMES[currentThemeName];
+    document.body.dataset.theme = currentThemeName;
+
+    // ============================================================
+    // 3. 字号状态
+    // ============================================================
+    function clampFontScale(v) {
+      return Math.max(MIN_FONT_SCALE, Math.min(MAX_FONT_SCALE, v));
+    }
+
+    let fontScale = parseFloat(safeStorage.getItem('calendar-font-scale'));
+    if (isNaN(fontScale)) fontScale = DEFAULT_FONT_SCALE;
+    fontScale = clampFontScale(fontScale);
+
+    // ============================================================
+    // 4. 初始缩放
+    // ============================================================
+    function computeBaseZoom() {
+      const a = window.innerWidth / window.innerHeight;
+      const targetViewWidth = window.innerWidth < 1024 ? 10 : 19;
+      return (FRUSTUM_SIZE * a) / targetViewWidth;
+    }
+
+    let aspect = window.innerWidth / window.innerHeight;
+    let baseZoom = computeBaseZoom();
+
+    // ============================================================
+    // 5. Three.js 初始化
+    // ============================================================
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(currentTheme.sceneBg);
+
+    const camera = new THREE.OrthographicCamera(
+      (-FRUSTUM_SIZE * aspect) / 2, (FRUSTUM_SIZE * aspect) / 2,
+       FRUSTUM_SIZE / 2, -FRUSTUM_SIZE / 2,
+       0.1, 1000
+    );
+    camera.position.set(0, 0, 10);
+    camera.lookAt(0, 0, 0);
+    camera.zoom = baseZoom;
+    camera.updateProjectionMatrix();
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(DPR);
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    document.getElementById('app').appendChild(renderer.domElement);
+
+    const canvasEl = renderer.domElement;
+
+    // ============================================================
+    // 6. 相机控制
+    // ============================================================
+    CameraControls.install({ THREE });
+
+    const cameraControls = new CameraControls(camera, canvasEl);
+    cameraControls.mouseButtons.left = CameraControls.ACTION.TRUCK;
+    cameraControls.mouseButtons.right = CameraControls.ACTION.TRUCK;
+    cameraControls.mouseButtons.wheel = CameraControls.ACTION.NONE;
+    cameraControls.mouseButtons.middle = CameraControls.ACTION.NONE;
+    cameraControls.touches.one = CameraControls.ACTION.TOUCH_TRUCK;
+    cameraControls.touches.two = CameraControls.ACTION.TOUCH_DOLLY_PAN;
+    cameraControls.touches.three = CameraControls.ACTION.TOUCH_TRUCK;
+    cameraControls.smoothTime = 0.2;
+    cameraControls.draggingSmoothTime = 0.08;
+    cameraControls.minZoom = baseZoom / 3;
+    cameraControls.maxZoom = baseZoom * 8;
+    cameraControls.setBoundary(new THREE.Box3(
+      new THREE.Vector3(-TOTAL_W / 2 - 1, -TOTAL_H / 2 - 1, -5),
+      new THREE.Vector3( TOTAL_W / 2 + 1,  TOTAL_H / 2 + 1,  5)
+    ));
+    cameraControls.zoomTo(baseZoom, false);
+    cameraControls.setLookAt(0, 0, 10, 0, 0, 0, false);
+    cameraControls.update(0);
+
+    canvasEl.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const intensity = Math.min(Math.abs(e.deltaY) / 100, 3);
+      const factor = e.deltaY > 0
+        ? Math.pow(0.88, intensity)
+        : Math.pow(1.14, intensity);
+      const newZoom = Math.max(
+        cameraControls.minZoom,
+        Math.min(cameraControls.maxZoom, camera.zoom * factor)
+      );
+      if (Math.abs(newZoom - camera.zoom) < 0.0001) return;
+      cameraControls.zoomTo(newZoom, false);
+    }, { passive: false });
+
+    // ============================================================
+    // 7. 日期数据
+    // ============================================================
+    const SolarLib = window.Solar;
+    const HolidayUtilLib = window.HolidayUtil;
+
+    const dateCache = new Map();
+
+    function getDateData(year, month, day) {
+      const key = year + '-' + month + '-' + day;
+      if (dateCache.has(key)) return dateCache.get(key);
+
+      let lunar = { text: '' };
+      const festivals = [];
+
+      if (SolarLib) {
+        try {
+          const solar = SolarLib.fromYmd(year, month + 1, day);
+          const l = solar.getLunar();
+
+          const jieQi = l.getJieQi();
+          if (jieQi) {
+            lunar = { text: jieQi, type: 'jieqi' };
+          } else if (l.getDay() === 1) {
+            lunar = { text: l.getMonthInChinese() + '月', type: 'lunar' };
+          } else {
+            lunar = { text: l.getDayInChinese(), type: 'lunar' };
+          }
+
+          const lunarFests = l.getFestivals();
+          if (lunarFests) {
+            for (let i = 0; i < lunarFests.length; i++) {
+              const f = lunarFests[i];
+              festivals.push({
+                name: f,
+                shortName: f.length > 4 ? f.substring(0, 4) : f,
+                type: 'lunar',
+                priority: 15
+              });
+            }
+          }
+          const solarFests = solar.getFestivals();
+          if (solarFests) {
+            for (let i = 0; i < solarFests.length; i++) {
+              const f = solarFests[i];
+              festivals.push({
+                name: f,
+                shortName: f.length > 4 ? f.substring(0, 4) : f,
+                type: 'solar',
+                priority: 10
+              });
+            }
+          }
+        } catch (e) {}
+      }
+
+      festivals.sort((a, b) => b.priority - a.priority);
+      const data = { lunar, festivals };
+      dateCache.set(key, data);
+      return data;
+    }
+
+    function getHolidayStatus(year, month, day) {
+      if (!HolidayUtilLib) return null;
+      try {
+        const h = HolidayUtilLib.getHoliday(year, month + 1, day);
+        if (!h) return null;
+        return { name: h.getName(), isWork: h.isWork() };
+      } catch (e) {
+        return null;
+      }
+    }
+
+    // ============================================================
+    // 8. 选中状态
+    // ============================================================
+    let selected = null;
+
+    // ============================================================
+    // 9. 绘制
+    // ============================================================
+    function drawMonthToCanvas(ctx, W, H, year, month, sel, theme, themeName, fs) {
+      ctx.fillStyle = theme.cardBg;
+      ctx.beginPath();
+      if (ctx.roundRect) ctx.roundRect(0, 0, W, H, 22);
+      else ctx.rect(0, 0, W, H);
+      ctx.fill();
+
+      const hue = Math.round((month / 12) * 360);
+      ctx.fillStyle = 'hsl(' + hue + ', ' + theme.accentS + '%, ' + theme.accentL + '%)';
+      ctx.beginPath();
+      if (ctx.roundRect) ctx.roundRect(0, 0, 9, H, [22, 0, 0, 22]);
+      else ctx.rect(0, 0, 9, H);
+      ctx.fill();
+
+      ctx.strokeStyle = theme.cardBorder;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      if (ctx.roundRect) ctx.roundRect(1, 1, W - 2, H - 2, 21);
+      else ctx.rect(1, 1, W - 2, H - 2);
+      ctx.stroke();
+
+      const titleFont = 'bold ' + Math.round(BASE_TITLE_FONT * fs) + 'px system-ui, sans-serif';
+      const headerFont = '600 ' + Math.round(BASE_HEADER_FONT * fs) + 'px system-ui, sans-serif';
+      const dayFont = 'bold ' + Math.round(BASE_DAY_FONT * fs) + 'px system-ui, sans-serif';
+      const lunarFont = Math.round(BASE_LUNAR_FONT * fs) + 'px system-ui, sans-serif';
+      const festFont = 'bold ' + Math.round(BASE_FEST_FONT * fs) + 'px system-ui, sans-serif';
+
+      ctx.fillStyle = theme.title;
+      ctx.font = titleFont;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText((month + 1) + '月', W / 2, 58);
+
+      ctx.font = headerFont;
+      for (let i = 0; i < 7; i++) {
+        ctx.fillStyle = (i === 0 || i === 6) ? theme.weekHeaderWeekend : theme.weekHeader;
+        ctx.fillText(WEEK_DAYS[i], GRID_START_X + i * GRID_CELL_W + GRID_CELL_W / 2, 128);
+      }
+
+      const firstDay = new Date(year, month, 1).getDay();
+      const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+      const today = new Date();
+      const isCurrentYear = year === today.getFullYear();
+      const isCurrentMonth = month === today.getMonth();
+      const todayDate = today.getDate();
+
+      let row = 0, col = firstDay;
+      for (let d = 1; d <= daysInMonth; d++) {
+        const cx = GRID_START_X + col * GRID_CELL_W + GRID_CELL_W / 2;
+        const cy = GRID_START_Y + row * GRID_CELL_H + GRID_CELL_H / 2;
+        const isToday = isCurrentYear && isCurrentMonth && d === todayDate;
+        const isSelected = sel && sel.year === year && sel.month === month && sel.day === d;
+
+        const data = getDateData(year, month, d);
+        const lunar = data.lunar;
+        const festivals = data.festivals;
+
+        if (isToday) {
+          ctx.fillStyle = theme.todayBg;
+          ctx.beginPath();
+          if (ctx.roundRect) ctx.roundRect(cx - 47, cy - 52, 94, 106, 13);
+          else ctx.rect(cx - 47, cy - 52, 94, 106);
+          ctx.fill();
+        }
+
+        if (isSelected) {
+          ctx.strokeStyle = theme.selectedBorder;
+          ctx.lineWidth = 4;
+          ctx.beginPath();
+          if (ctx.roundRect) ctx.roundRect(cx - 52, cy - 56, 104, 114, 15);
+          else ctx.rect(cx - 52, cy - 56, 104, 114);
+          ctx.stroke();
+        }
+
+        ctx.font = dayFont;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        if (isToday) ctx.fillStyle = theme.todayText;
+        else if (col === 0 || col === 6) ctx.fillStyle = theme.dayWeekend;
+        else ctx.fillStyle = theme.dayNormal;
+        ctx.fillText(String(d), cx, cy + ROW_DAY_Y);
+
+        ctx.font = lunarFont;
+        if (isToday) ctx.fillStyle = theme.lunarToday;
+        else if (lunar.type === 'jieqi') ctx.fillStyle = theme.lunarJieqi;
+        else ctx.fillStyle = theme.lunar;
+        ctx.fillText(lunar.text, cx, cy + ROW_LUNAR_Y);
+
+        if (festivals.length > 0) {
+          const fc = FESTIVAL_COLORS[themeName][festivals[0].type] || theme.festivalToday;
+          ctx.font = festFont;
+          ctx.fillStyle = isToday ? theme.festivalToday : fc;
+          ctx.fillText(festivals[0].shortName, cx, cy + ROW_FEST_Y);
+        }
+
+        col++;
+        if (col > 6) { col = 0; row++; }
+      }
+
+      ctx.strokeStyle = theme.grid;
+      ctx.lineWidth = 1;
+      for (let r = 0; r <= 6; r++) {
+        const ly = GRID_START_Y + r * GRID_CELL_H;
+        ctx.beginPath();
+        ctx.moveTo(GRID_START_X, ly);
+        ctx.lineTo(W - GRID_START_X, ly);
+        ctx.stroke();
+      }
+    }
+
+    // ============================================================
+    // 10. 卡片与 Hitbox
+    // ============================================================
+    let monthMeshes = [];
+    let hitboxes = [];
+
+    function createHitbox(year, month, day, lx, ly, lw, lh) {
+      const geom = new THREE.PlaneGeometry(lw, lh);
+      const mat = new THREE.MeshBasicMaterial({
+        transparent: true,
+        depthWrite: false,
+        colorWrite: false
+      });
+      const mesh = new THREE.Mesh(geom, mat);
+      mesh.position.set(lx, ly, 0.01);
+      mesh.userData = { year, month, day };
+      return mesh;
+    }
+
+    function createMonthCard(year, month) {
+      const canvas = document.createElement('canvas');
+      canvas.width = CANVAS_W * DPR;
+      canvas.height = CANVAS_H * DPR;
+      const ctx = canvas.getContext('2d');
+      ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+
+      drawMonthToCanvas(ctx, CANVAS_W, CANVAS_H, year, month, selected, currentTheme, currentThemeName, fontScale);
+
+      const texture = new THREE.CanvasTexture(canvas);
+      texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
+      texture.colorSpace = THREE.SRGBColorSpace;
+      texture.minFilter = THREE.LinearFilter;
+      texture.magFilter = THREE.LinearFilter;
+      texture.generateMipmaps = false;
+
+      const geometry = new THREE.PlaneGeometry(CARD_W, CARD_H);
+      const material = new THREE.MeshBasicMaterial({
+        map: texture,
+        transparent: true,
+        side: THREE.DoubleSide,
+        depthWrite: false
+      });
+
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.userData.isMonthCard = true;
+      mesh.userData.year = year;
+      mesh.userData.month = month;
+      mesh.userData.canvas = canvas;
+      mesh.userData.texture = texture;
+
+      const firstDay = new Date(year, month, 1).getDay();
+      const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+      let row = 0, col = firstDay;
+      for (let d = 1; d <= daysInMonth; d++) {
+        const cx = GRID_START_X + col * GRID_CELL_W + GRID_CELL_W / 2;
+        const cy = GRID_START_Y + row * GRID_CELL_H + GRID_CELL_H / 2;
+
+        const lx = (cx / CANVAS_W - 0.5) * CARD_W;
+        const ly = (0.5 - cy / CANVAS_H) * CARD_H;
+        const lw = (GRID_CELL_W / CANVAS_W) * CARD_W;
+        const lh = (GRID_CELL_H / CANVAS_H) * CARD_H;
+
+        const hitbox = createHitbox(year, month, d, lx, ly, lw, lh);
+        mesh.add(hitbox);
+        hitboxes.push(hitbox);
+
+        col++;
+        if (col > 6) { col = 0; row++; }
+      }
+
+      return mesh;
+    }
+
+    // ============================================================
+    // 11. 局部重绘
+    // ============================================================
+    function redrawMonthCard(year, month) {
+      const mesh = monthMeshes.find(
+        (m) => m.userData.year === year && m.userData.month === month
+      );
+      if (!mesh) return;
+      const canvas = mesh.userData.canvas;
+      const ctx = canvas.getContext('2d');
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+      drawMonthToCanvas(ctx, CANVAS_W, CANVAS_H, year, month, selected, currentTheme, currentThemeName, fontScale);
+      mesh.userData.texture.needsUpdate = true;
+    }
+
+    function redrawAllCards() {
+      monthMeshes.forEach((m) => {
+        redrawMonthCard(m.userData.year, m.userData.month);
+      });
+    }
+
+    function setSelected(year, month, day) {
+      const same = selected
+        && selected.year === year
+        && selected.month === month
+        && selected.day === day;
+      if (same) return;
+
+      const old = selected;
+      selected = { year, month, day };
+
+      if (old) redrawMonthCard(old.year, old.month);
+      if (!old || old.year !== year || old.month !== month) {
+        redrawMonthCard(year, month);
+      }
+    }
+
+    function clearSelection() {
+      if (!selected) return;
+      const old = selected;
+      selected = null;
+      redrawMonthCard(old.year, old.month);
+    }
+
+    // ============================================================
+    // 12. 异步分帧构建
+    // ============================================================
+    const loadingEl = document.getElementById('loading');
+    const loadingText = document.getElementById('loadingText');
+    const progressFill = document.getElementById('progressFill');
+    const loadTimer = setTimeout(() => {
+      if (loadingText) loadingText.textContent = '加载失败：请检查网络后刷新';
+      const sp = loadingEl && loadingEl.querySelector('.spinner');
+      if (sp) sp.style.display = 'none';
+    }, 8000);
+
+    let isBuilding = false;
+    let buildGeneration = 0;
+
+    function nextFrame() {
+      return new Promise((resolve) => requestAnimationFrame(resolve));
+    }
+
+    function clearCalendar() {
+      monthMeshes.forEach((mesh) => {
+        mesh.traverse((child) => {
+          if (child.geometry) child.geometry.dispose();
+          if (child.material) {
+            if (child.material.map) child.material.map.dispose();
+            child.material.dispose();
+          }
+        });
+        scene.remove(mesh);
+      });
+      monthMeshes = [];
+      hitboxes = [];
+    }
+
+    async function buildCalendar(year) {
+      if (isBuilding) return;
+      isBuilding = true;
+      const gen = ++buildGeneration;
+
+      try {
+        clearCalendar();
+        selected = null;
+        dateCache.clear();
+
+        loadingEl.style.display = 'flex';
+        loadingText.textContent = '正在构建日历…';
+        progressFill.style.width = '0%';
+
+        for (let m = 0; m < 12; m++) {
+          await nextFrame();
+          if (gen !== buildGeneration) return;
+
+          loadingText.textContent = '正在绘制 ' + (m + 1) + '/12 月…';
+          progressFill.style.width = ((m / 12) * 100) + '%';
+
+          const card = createMonthCard(year, m);
+          const col = m % COLS;
+          const row = Math.floor(m / COLS);
+
+          card.position.x = col * (CARD_W + GAP_X) - TOTAL_W / 2 + CARD_W / 2;
+          card.position.y = -(row * (CARD_H + GAP_Y)) + TOTAL_H / 2 - CARD_H / 2;
+          card.position.z = 0;
+
+          card.scale.set(0.92, 0.92, 1);
+          card.userData.targetScale = 1;
+
+          scene.add(card);
+          monthMeshes.push(card);
+        }
+
+        progressFill.style.width = '100%';
+        await nextFrame();
+        if (gen !== buildGeneration) return;
+
+        loadingEl.style.display = 'none';
+        clearTimeout(loadTimer);
+      } finally {
+        isBuilding = false;
+      }
+    }
+
+    // ============================================================
+    // 13. 字号调节 UI（使用 safeStorage）
+    // ============================================================
+    const fontToggleBtn = document.getElementById('fontToggle');
+    const fontPanel = document.getElementById('fontPanel');
+    const fontSlider = document.getElementById('fontSlider');
+    const fontPercent = document.getElementById('fontPercent');
+    const fontMinus = document.getElementById('fontMinus');
+    const fontPlus = document.getElementById('fontPlus');
+    const fontResetBtn = document.getElementById('fontReset');
+
+    function updateFontUI() {
+      const pct = Math.round(fontScale * 100);
+      fontSlider.value = pct;
+      fontPercent.textContent = pct + '%';
+    }
+
+    function applyFontScale(newScale) {
+      newScale = clampFontScale(newScale);
+      if (Math.abs(newScale - fontScale) < 0.001) {
+        updateFontUI();
+        return;
+      }
+      fontScale = newScale;
+      updateFontUI();
+      redrawAllCards();
+      safeStorage.setItem('calendar-font-scale', String(fontScale));
+    }
+
+    fontToggleBtn.onclick = (e) => {
+      e.stopPropagation();
+      fontPanel.classList.toggle('hidden');
+    };
+
+    fontSlider.addEventListener('input', () => {
+      const pct = parseInt(fontSlider.value, 10);
+      fontPercent.textContent = pct + '%';
+    });
+
+    fontSlider.addEventListener('change', () => {
+      const pct = parseInt(fontSlider.value, 10);
+      applyFontScale(pct / 100);
+    });
+
+    fontMinus.onclick = () => applyFontScale(fontScale - 0.05);
+    fontPlus.onclick = () => applyFontScale(fontScale + 0.05);
+    fontResetBtn.onclick = () => applyFontScale(DEFAULT_FONT_SCALE);
+
+    document.addEventListener('click', (e) => {
+      if (fontPanel.classList.contains('hidden')) return;
+      if (fontPanel.contains(e.target)) return;
+      if (fontToggleBtn.contains(e.target)) return;
+      fontPanel.classList.add('hidden');
+    });
+
+    updateFontUI();
+
+    // ============================================================
+    // 14. 主题切换（使用 safeStorage）
+    // ============================================================
+    const themeToggleBtn = document.getElementById('themeToggle');
+
+    function updateThemeToggleIcon() {
+      themeToggleBtn.textContent = currentThemeName === 'dark' ? '☀️' : '🌙';
+      themeToggleBtn.title = currentThemeName === 'dark' ? '切换到浅色' : '切换到深色';
+    }
+
+    function applyTheme(name) {
+      if (!THEMES[name]) name = 'dark';
+      currentThemeName = name;
+      currentTheme = THEMES[name];
+
+      document.body.dataset.theme = name;
+      scene.background.set(currentTheme.sceneBg);
+
+      redrawAllCards();
+
+      updateThemeToggleIcon();
+      safeStorage.setItem('calendar-theme', name);
+    }
+
+    themeToggleBtn.onclick = () => {
+      applyTheme(currentThemeName === 'dark' ? 'light' : 'dark');
+    };
+
+    updateThemeToggleIcon();
+    scene.background.set(currentTheme.sceneBg);
+
+    // ============================================================
+    // 15. 详情面板
+    // ============================================================
+    const detailPanel = document.getElementById('detailPanel');
+
+    function showDetail(year, month, day, clientX, clientY) {
+      let html = '';
+      const date = new Date(year, month, day);
+      const weekStr = WEEK_DAYS[date.getDay()];
+      html += '<div class="d-date">' + year + '年' + (month + 1) + '月' + day + '日 星期' + weekStr + '</div>';
+
+      if (SolarLib) {
+        try {
+          const solar = SolarLib.fromYmd(year, month + 1, day);
+          const lunar = solar.getLunar();
+
+          const yearGZ = lunar.getYearInGanZhi();
+          const monthGZ = lunar.getMonthInGanZhi();
+          const dayGZ = lunar.getDayInGanZhi();
+          const zodiac = lunar.getYearShengXiao();
+          const lunarMonth = lunar.getMonthInChinese();
+          const lunarDay = lunar.getDayInChinese();
+
+          html += '<div class="d-lunar">农历 ' + yearGZ + '年（' + zodiac + '）' + lunarMonth + '月' + lunarDay + '</div>';
+          html += '<div class="d-ganzhi">' + yearGZ + '年 ' + monthGZ + '月 ' + dayGZ + '日</div>';
+
+          const jieQi = lunar.getJieQi();
+          if (jieQi) html += '<div class="d-jieqi">节气：' + jieQi + '</div>';
+
+          const data = getDateData(year, month, day);
+          if (data.festivals.length > 0) {
+            const names = data.festivals.map((f) => f.name).join('、');
+            html += '<div class="d-festivals">节日：' + names + '</div>';
+          }
+
+          const holidayStatus = getHolidayStatus(year, month, day);
+          if (holidayStatus) {
+            if (holidayStatus.isWork) {
+              html += '<div class="d-work">💼 调休上班</div>';
+            } else {
+              html += '<div class="d-holiday">🏖 ' + holidayStatus.name + '假期</div>';
+            }
+          }
+
+          try {
+            const yi = lunar.getDayYi();
+            const ji = lunar.getDayJi();
+            let yijiHtml = '';
+            if (yi && yi.length) yijiHtml += '<span class="yi">宜：' + yi.slice(0, 6).join(' ') + '</span>';
+            if (ji && ji.length) yijiHtml += '<span class="ji">忌：' + ji.slice(0, 6).join(' ') + '</span>';
+            if (yijiHtml) html += '<div class="d-yiji">' + yijiHtml + '</div>';
+          } catch (e) {}
+        } catch (e) {}
+      }
+
+      detailPanel.innerHTML = html;
+      detailPanel.classList.remove('hidden');
+      positionDetail(clientX, clientY);
+    }
+
+    function positionDetail(clientX, clientY) {
+      const rect = detailPanel.getBoundingClientRect();
+      const pad = 16;
+      let x = clientX + pad;
+      let y = clientY + pad;
+      if (x + rect.width > window.innerWidth - 8) x = clientX - rect.width - pad;
+      if (y + rect.height > window.innerHeight - 8) y = clientY - rect.height - pad;
+      x = Math.max(8, x);
+      y = Math.max(8, y);
+      detailPanel.style.left = x + 'px';
+      detailPanel.style.top = y + 'px';
+    }
+
+    function hideDetail() {
+      detailPanel.classList.add('hidden');
+    }
+
+    // ============================================================
+    // 16. 交互
+    // ============================================================
+    const raycaster = new THREE.Raycaster();
+    const pointerNDC = new THREE.Vector2();
+
+    let activePointers = new Set();
+    let pointerDownInfo = null;
+    let isDragging = false;
+    let currentHoverKey = '';
+    let pinnedDetail = false;
+
+    function getHitAt(clientX, clientY) {
+      const rect = canvasEl.getBoundingClientRect();
+      pointerNDC.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+      pointerNDC.y = -((clientY - rect.top) / rect.height) * 2 + 1;
+
+      scene.updateMatrixWorld();
+      raycaster.setFromCamera(pointerNDC, camera);
+      const hits = raycaster.intersectObjects(hitboxes, false);
+      if (hits.length > 0) return hits[0].object.userData;
+      return null;
+    }
+
+    canvasEl.addEventListener('pointerdown', (e) => {
+      activePointers.add(e.pointerId);
+      if (activePointers.size === 1) {
+        pointerDownInfo = { x: e.clientX, y: e.clientY };
+        isDragging = false;
+      } else {
+        pointerDownInfo = null;
+        isDragging = true;
+        currentHoverKey = '';
+      }
+    });
+
+    canvasEl.addEventListener('pointermove', (e) => {
+      if (pointerDownInfo) {
+        const dx = e.clientX - pointerDownInfo.x;
+        const dy = e.clientY - pointerDownInfo.y;
+        if (Math.hypot(dx, dy) > 8) {
+          isDragging = true;
+          currentHoverKey = '';
+        }
+      }
+
+      if (e.pointerType === 'mouse' && !isDragging && activePointers.size <= 1) {
+        const hit = getHitAt(e.clientX, e.clientY);
+        if (hit) {
+          const key = hit.year + '-' + hit.month + '-' + hit.day;
+          if (key !== currentHoverKey) {
+            currentHoverKey = key;
+            showDetail(hit.year, hit.month, hit.day, e.clientX, e.clientY);
+            pinnedDetail = false;
+          } else {
+            positionDetail(e.clientX, e.clientY);
+          }
+        } else {
+          if (!pinnedDetail && currentHoverKey) {
+            currentHoverKey = '';
+            hideDetail();
+          }
+        }
+      }
+    });
+
+    canvasEl.addEventListener('pointerup', (e) => {
+      activePointers.delete(e.pointerId);
+
+      if (pointerDownInfo && activePointers.size === 0) {
+        const dx = e.clientX - pointerDownInfo.x;
+        const dy = e.clientY - pointerDownInfo.y;
+
+        if (Math.hypot(dx, dy) < 10) {
+          const hit = getHitAt(e.clientX, e.clientY);
+          if (hit) {
+            setSelected(hit.year, hit.month, hit.day);
+            currentHoverKey = hit.year + '-' + hit.month + '-' + hit.day;
+            showDetail(hit.year, hit.month, hit.day, e.clientX, e.clientY);
+            pinnedDetail = true;
+          } else {
+            clearSelection();
+            currentHoverKey = '';
+            hideDetail();
+            pinnedDetail = false;
+          }
+        }
+        pointerDownInfo = null;
+        isDragging = false;
+      }
+    });
+
+    canvasEl.addEventListener('pointercancel', (e) => {
+      activePointers.delete(e.pointerId);
+    });
+
+    canvasEl.addEventListener('pointerleave', () => {
+      if (activePointers.size === 0 && !pinnedDetail) {
+        currentHoverKey = '';
+        hideDetail();
+      }
+    });
+
+    // ============================================================
+    // 17. 动画循环
+    // ============================================================
+    const clock = new THREE.Clock();
+    const zoomLabel = document.getElementById('zoomLabel');
+    let lastRenderedZoom = -1;
+
+    function updateZoomLabel() {
+      const pct = Math.round((camera.zoom / baseZoom) * 100);
+      zoomLabel.textContent = pct + '%';
+    }
+
+    function animate() {
+      requestAnimationFrame(animate);
+      const delta = clock.getDelta();
+
+      if (Math.abs(camera.zoom - lastRenderedZoom) > 0.0005) {
+        lastRenderedZoom = camera.zoom;
+        updateZoomLabel();
+      }
+
+      for (let i = 0; i < monthMeshes.length; i++) {
+        const mesh = monthMeshes[i];
+        const target = mesh.userData.targetScale || 1;
+        const cur = mesh.scale.x;
+        if (Math.abs(cur - target) > 0.001) {
+          const next = cur + (target - cur) * Math.min(delta * 8, 1);
+          mesh.scale.set(next, next, 1);
+        } else {
+          mesh.scale.set(target, target, 1);
+        }
+      }
+
+      cameraControls.update(delta);
+      renderer.render(scene, camera);
+    }
+
+    // ============================================================
+    // 18. 年份切换
+    // ============================================================
+    let currentYear = new Date().getFullYear();
+    const yearLabel = document.getElementById('yearLabel');
+
+    function updateYearLabel() { yearLabel.textContent = currentYear; }
+
+    document.getElementById('prevYear').onclick = () => {
+      currentYear--;
+      updateYearLabel();
+      hideDetail();
+      pinnedDetail = false;
+      buildCalendar(currentYear);
+    };
+    document.getElementById('nextYear').onclick = () => {
+      currentYear++;
+      updateYearLabel();
+      hideDetail();
+      pinnedDetail = false;
+      buildCalendar(currentYear);
+    };
+
+    // ============================================================
+    // 19. 缩放按钮
+    // ============================================================
+    document.getElementById('zoomIn').onclick = () => {
+      const z = Math.min(camera.zoom * 1.4, cameraControls.maxZoom);
+      cameraControls.zoomTo(z, true);
+    };
+
+    document.getElementById('zoomOut').onclick = () => {
+      const z = Math.max(camera.zoom / 1.4, cameraControls.minZoom);
+      cameraControls.zoomTo(z, true);
+    };
+
+    document.getElementById('zoomReset').onclick = () => {
+      cameraControls.setLookAt(0, 0, 10, 0, 0, 0, true);
+      cameraControls.zoomTo(baseZoom, true);
+    };
+
+    // ============================================================
+    // 20. 响应式
+    // ============================================================
+    function onResize() {
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      aspect = w / h;
+
+      camera.left = (-FRUSTUM_SIZE * aspect) / 2;
+      camera.right = (FRUSTUM_SIZE * aspect) / 2;
+      camera.top = FRUSTUM_SIZE / 2;
+      camera.bottom = -FRUSTUM_SIZE / 2;
+      camera.updateProjectionMatrix();
+
+      renderer.setSize(w, h);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+
+      const newBaseZoom = computeBaseZoom();
+      const ratio = camera.zoom / baseZoom;
+      baseZoom = newBaseZoom;
+      camera.zoom = baseZoom * ratio;
+      camera.updateProjectionMatrix();
+
+      cameraControls.minZoom = baseZoom / 3;
+      cameraControls.maxZoom = baseZoom * 8;
+      updateZoomLabel();
+
+      const hint = document.getElementById('rotateHint');
+      const isTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+      if (isTouch && h > w && w < 768) hint.style.display = 'flex';
+      else hint.style.display = 'none';
+    }
+
+    window.addEventListener('resize', onResize);
+    window.addEventListener('orientationchange', () => setTimeout(onResize, 300));
+
+    document.getElementById('rotateHint').addEventListener('click', function () {
+      this.style.display = 'none';
+    });
+
+    // ============================================================
+    // 21. 启动
+    // ============================================================
+    updateYearLabel();
+    onResize();
+    updateZoomLabel();
+    animate();
+    buildCalendar(currentYear);
+  </script>
+</body>
+</html>

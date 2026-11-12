@@ -74,6 +74,38 @@
   #fsBtn:active { transform: scale(.94); background: rgba(40, 70, 120, .82); }
   #fsBtn.hidden { display: none; }
 
+  /* ---------- 左下角：左右移动按钮 ---------- */
+  #panCtrl {
+    position: fixed; left: 16px; bottom: 20px; z-index: 30;
+    display: flex; gap: 8px;
+  }
+  .pan-btn {
+    width: 54px; height: 48px;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 14px;
+    font-family: inherit;
+    font-size: 20px; font-weight: 700;
+    color: #b9cfe8;
+    background: rgba(24, 34, 50, .78);
+    border: 1px solid rgba(120, 160, 210, .26);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    box-shadow: 0 6px 24px rgba(0,0,0,.5);
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: none;
+    transition: all .15s ease;
+  }
+  .pan-btn.pressed {
+    color: #06121f;
+    background: linear-gradient(135deg, #8fdcff, #4d8fff);
+    border-color: rgba(170, 225, 255, .8);
+    box-shadow: 0 4px 22px rgba(80, 170, 255, .55),
+                inset 0 1px 0 rgba(255,255,255,.5);
+    transform: scale(.95);
+  }
+
+  /* ---------- 右下角：拖拽 / 延音按钮 ---------- */
   #ctrlStack {
     position: fixed; right: 16px; bottom: 20px; z-index: 30;
     display: flex; flex-direction: column; gap: 10px; align-items: flex-end;
@@ -148,6 +180,8 @@
     .hud p { font-size: 10px; line-height: 1.6; }
     .hud p:nth-of-type(n+3) { display: none; }
     #fsBtn { right: 10px; top: 10px; padding: 7px 12px; font-size: 12px; }
+    #panCtrl { left: 10px; bottom: 12px; gap: 6px; }
+    .pan-btn { width: 46px; height: 42px; font-size: 17px; border-radius: 12px; }
     #ctrlStack { right: 10px; bottom: 12px; gap: 8px; }
     .ctrl-btn { padding: 9px 15px; font-size: 12px; }
     #note { font-size: 30px; bottom: 18px; }
@@ -165,6 +199,11 @@
 <button id="fsBtn">
   <span id="fsIcon">⤢</span><span id="fsText">横屏</span>
 </button>
+
+<div id="panCtrl">
+  <button id="panLeftBtn" class="pan-btn" aria-label="向左移动">◀</button>
+  <button id="panRightBtn" class="pan-btn" aria-label="向右移动">▶</button>
+</div>
 
 <div id="ctrlStack">
   <button id="dragBtn" class="ctrl-btn on">拖拽 ON</button>
@@ -191,10 +230,10 @@
   </p>
   <p>
     移调 <kbd>[</kbd> <kbd>]</kbd> &nbsp;·&nbsp; 踏板 <kbd>空格</kbd>
-    &nbsp;·&nbsp; 左右移动 <kbd>←</kbd> <kbd>→</kbd>
+    &nbsp;·&nbsp; 左右移动 <kbd>←</kbd> <kbd>→</kbd> 或左下角按钮
     &nbsp;·&nbsp; 当前：<span id="octLabel">C4 – B5</span>
   </p>
-  <p>点击琴键（靠前力度大）· 关闭「拖拽」后视角锁定 · 双指或右键可平移</p>
+  <p>点击琴键（靠前力度大）· 关闭「拖拽」后单指在琴身滑动可平移 · 双指缩放</p>
 </div>
 
 <div id="note"></div>
@@ -272,11 +311,11 @@ function startPiano() {
   renderer.toneMappingExposure = 1.12;
   if ('outputEncoding' in renderer) renderer.outputEncoding = THREE.sRGBEncoding;
 
-  // ▼ 关键修复：让光照强度语义与 r155+ 保持一致，避免画面发白
+  // 让光照强度语义与 r155+ 保持一致，避免画面发白
   if ('physicallyCorrectLights' in renderer) {
-    renderer.physicallyCorrectLights = true;   // r149 及更早
+    renderer.physicallyCorrectLights = true;
   } else if ('useLegacyLights' in renderer) {
-    renderer.useLegacyLights = false;          // r155+
+    renderer.useLegacyLights = false;
   }
 
   var scene = new THREE.Scene();
@@ -310,7 +349,6 @@ function startPiano() {
   rimLight.position.set(-16, 10, -14);
   scene.add(rimLight);
 
-  // 物理光照模式下，点光源强度按坎德拉计算，保持与 r160 一致
   var fillLight = new THREE.PointLight(0x66ccff, 30, 60, 2);
   fillLight.position.set(0, 9, 16);
   scene.add(fillLight);
@@ -516,14 +554,22 @@ function startPiano() {
 
   function startGesture() {
     if (gesturePointers.size === 1) {
-      if (!dragEnabled) { gesture = null; return; }
       var p = gesturePointers.values().next().value;
-      gesture = {
-        type: 'rotate',
-        startX: p.x, startY: p.y,
-        startTheta: camState.thetaGoal,
-        startPhi: camState.phiGoal
-      };
+      if (dragEnabled) {
+        // 拖拽开启：单指空白区 → 旋转
+        gesture = {
+          type: 'rotate',
+          startX: p.x, startY: p.y,
+          startTheta: camState.thetaGoal,
+          startPhi: camState.phiGoal
+        };
+      } else {
+        // 拖拽关闭：单指空白区 → 平移（手机上主要靠这个和方向按钮）
+        gesture = {
+          type: 'pan',
+          lastX: p.x, lastY: p.y
+        };
+      }
     } else if (gesturePointers.size === 2) {
       var it = gesturePointers.values();
       var a = it.next().value;
@@ -566,6 +612,16 @@ function startPiano() {
       camState.thetaGoal = gesture.startTheta - dx * ROT_SPEED;
       camState.phiGoal = clamp(gesture.startPhi - dy * ROT_SPEED, PHI_MIN, PHI_MAX);
       userMovedCamera = true;
+
+    } else if (gesture.type === 'pan') {
+      if (gesturePointers.size !== 1) return;
+      var pp = gesturePointers.values().next().value;
+      var pdx = pp.x - gesture.lastX;
+      var pdy = pp.y - gesture.lastY;
+      gesture.lastX = pp.x;
+      gesture.lastY = pp.y;
+      panByScreen(pdx, pdy);
+
     } else if (gesture.type === 'pinch') {
       if (gesturePointers.size !== 2) return;
       var it = gesturePointers.values();
@@ -882,7 +938,15 @@ function startPiano() {
 
   function setDragEnabled(on) {
     dragEnabled = on;
-    if (!on && gesture && gesture.type === 'rotate') gesture = null;
+    if (!on && gesture && gesture.type === 'rotate') {
+      // 正在旋转时关掉拖拽，切换成平移，避免手势中断
+      var p = gesturePointers.values().next().value;
+      if (p) {
+        gesture = { type: 'pan', lastX: p.x, lastY: p.y };
+      } else {
+        gesture = null;
+      }
+    }
     dragBtn.classList.toggle('on', on);
     dragBtn.textContent = on ? '拖拽 ON' : '拖拽 OFF';
   }
@@ -894,7 +958,38 @@ function startPiano() {
   setDragEnabled(true);
 
   /* =========================================================
-     12. 拾取
+     12. 左下角左右移动按钮（按住持续平移）
+     ========================================================= */
+  var panBtnState = { left: false, right: false };
+  var panLeftBtn  = document.getElementById('panLeftBtn');
+  var panRightBtn = document.getElementById('panRightBtn');
+
+  function bindPanButton(btn, dirKey) {
+    function press(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      panBtnState[dirKey] = true;
+      btn.classList.add('pressed');
+      try { btn.setPointerCapture(e.pointerId); } catch (err) { /* 忽略 */ }
+    }
+    function release(e) {
+      if (!panBtnState[dirKey]) return;
+      panBtnState[dirKey] = false;
+      btn.classList.remove('pressed');
+      try { btn.releasePointerCapture(e.pointerId); } catch (err) { /* 忽略 */ }
+    }
+    btn.addEventListener('pointerdown', press);
+    btn.addEventListener('pointerup', release);
+    btn.addEventListener('pointercancel', release);
+    btn.addEventListener('lostpointercapture', release);
+    // 阻止长按弹出上下文菜单
+    btn.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+  }
+  bindPanButton(panLeftBtn, 'left');
+  bindPanButton(panRightBtn, 'right');
+
+  /* =========================================================
+     13. 拾取
      ========================================================= */
   var raycaster = new THREE.Raycaster();
   var ndc = new THREE.Vector2();
@@ -915,7 +1010,7 @@ function startPiano() {
   }
 
   /* =========================================================
-     13. 键盘映射
+     14. 键盘映射
      ========================================================= */
   var BASE_KEY_MAP = {
     'z': 60, 's': 61, 'x': 62, 'd': 63, 'c': 64, 'v': 65, 'g': 66,
@@ -988,10 +1083,14 @@ function startPiano() {
     gesture = null;
     panKeys.left = false;
     panKeys.right = false;
+    panBtnState.left = false;
+    panBtnState.right = false;
+    panLeftBtn.classList.remove('pressed');
+    panRightBtn.classList.remove('pressed');
   });
 
   /* =========================================================
-     14. 一键横屏
+     15. 一键横屏
      ========================================================= */
   var fsBtn      = document.getElementById('fsBtn');
   var fsIcon     = document.getElementById('fsIcon');
@@ -1106,7 +1205,7 @@ function startPiano() {
   });
 
   /* =========================================================
-     15. 动画循环
+     16. 动画循环
      ========================================================= */
   var clock = new THREE.Clock();
   var SUBSTEPS = 4;
@@ -1137,9 +1236,10 @@ function startPiano() {
       k.mesh.material.emissiveIntensity = g * (k.black ? 1.35 : 0.62);
     }
 
+    // —— 左右平移：方向键 + 左下角按钮，合并处理 ——
     var dir = 0;
-    if (panKeys.left)  dir -= 1;
-    if (panKeys.right) dir += 1;
+    if (panKeys.left  || panBtnState.left)  dir -= 1;
+    if (panKeys.right || panBtnState.right) dir += 1;
     if (dir !== 0) {
       camState.targetGoal.x = clamp(
         camState.targetGoal.x + dir * PAN_SPEED * dt,
@@ -1171,7 +1271,7 @@ function startPiano() {
   animate();
 
   /* =========================================================
-     16. 窗口尺寸变化
+     17. 窗口尺寸变化
      ========================================================= */
   var resizeTimer = null;
   window.addEventListener('resize', function () {

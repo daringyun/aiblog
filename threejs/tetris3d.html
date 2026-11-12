@@ -5,20 +5,28 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Three.js 3D 俄罗斯方块 · 奇异形状 · 颗粒方块 · 音效 · 计分</title>
     <style>
+        /* ==================== 全局重置 ==================== */
+        /* 3D 场景全屏铺满，隐藏滚动条；禁用文本选择和触摸手势默认行为 */
         * { box-sizing: border-box; }
         body {
             margin: 0; overflow: hidden;
             font-family: "Microsoft YaHei", "Segoe UI", sans-serif;
+            /* 径向渐变背景：中心偏蓝紫，边缘暗下去，和 3D 背景球形成整体氛围 */
             background: radial-gradient(ellipse at 50% 40%, #1a1a3a 0%, #0a0a1a 50%, #05050a 100%);
             color: #e8ecf4;
             touch-action: none;
             -webkit-user-select: none; user-select: none;
         }
+
+        /* ==================== 3D 画布容器 ==================== */
         #canvasWrap { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; }
 
+        /* ==================== 棋盘拖动条 ==================== */
+        /* 放在棋盘顶部外侧（由 JS 计算位置），按住可平移棋盘，
+           和 OrbitControls 的旋转互不干扰（它 stopPropagation）。 */
         #dragHandle {
             position: fixed;
-            display: none;
+            display: none;              /* 初始隐藏，resetCamera() 计算完位置后显示 */
             padding: 4px 12px;
             font-size: 11px; color: #4fffd6;
             background: rgba(79, 255, 214, 0.14);
@@ -38,6 +46,8 @@
         }
         #dragHandle:active { cursor: grabbing; background: rgba(79, 255, 214, 0.3); }
 
+        /* ==================== 右上侧栏：记分牌 + NEXT 预览 ==================== */
+        /* 整体 pointer-events: none，只有按钮单独设 auto，避免挡住 3D 拖拽 */
         #sidePanel {
             position: fixed; top: 16px; right: 16px;
             padding: 12px 13px;
@@ -45,6 +55,7 @@
             backdrop-filter: blur(10px);
             border: 1px solid rgba(120, 200, 255, 0.4);
             border-radius: 14px;
+            /* 双层彩色辉光：青绿 + 蓝紫，让面板看起来在发光 */
             box-shadow: 0 0 24px rgba(79, 255, 214, 0.25), 0 0 48px rgba(79, 157, 255, 0.15), 0 8px 32px rgba(0, 0, 0, 0.55);
             z-index: 10; min-width: 112px;
             pointer-events: none;
@@ -57,8 +68,10 @@
         #sidePanel .panel-divider { height: 1px; background: rgba(120, 200, 255, 0.2); margin: 2px 0; }
         #sidePanel .next-section { text-align: center; }
         #sidePanel .next-section .label { font-size: 10px; color: #7f92ad; letter-spacing: 0.5px; margin-bottom: 4px; }
+        /* NEXT 预览画布：CSS 尺寸与 canvas 分辨率一致（45px），避免模糊 */
         #nextCanvas { width: 45px; height: 45px; border-radius: 5px; background: rgba(0, 0, 0, 0.35); }
 
+        /* 重置视角按钮：在侧栏底部，单独设 pointer-events: auto 才能点 */
         #resetViewBtn {
             margin-top: 2px;
             padding: 6px 10px;
@@ -74,17 +87,23 @@
         #resetViewBtn:hover { background: rgba(79, 255, 214, 0.25); }
         #resetViewBtn:active { background: rgba(79, 255, 214, 0.35); }
 
+        /* ==================== 底部虚拟按键 ==================== */
+        /* 容器 pointer-events: none，只有按钮本身接收事件，不挡 3D 拖拽 */
         #touchPad {
             position: fixed; left: 0; right: 0; bottom: 0;
-            display: none; justify-content: space-between;
+            display: none;              /* 由 JS 添加 .show 后显示 */
+            justify-content: space-between;
             align-items: flex-end;
             padding: 0 14px calc(12px + env(safe-area-inset-bottom, 0px));
             z-index: 20; pointer-events: none;
+            /* 底部渐变，让按键区与 3D 场景有过渡 */
             background: linear-gradient(to top, rgba(3,5,12,0.85), rgba(3,5,12,0));
         }
         #touchPad.show { display: flex; }
 
+        /* 左侧方向键：2 行 3 列 */
         .dpad { display: grid; grid-template-columns: repeat(3, 52px); grid-template-rows: repeat(2, 52px); gap: 7px; pointer-events: none; }
+        /* 右侧功能键：1 列 2 行 */
         .actions { display: grid; grid-template-columns: 52px; grid-template-rows: repeat(2, 52px); gap: 7px; pointer-events: none; }
 
         #touchPad button {
@@ -103,16 +122,21 @@
             -webkit-touch-callout: none;
             user-select: none;
         }
+        /* 按下态：青色辉光加强 + 轻微缩小 */
         #touchPad button.pressed, #touchPad button:active {
             background: rgba(79, 255, 214, 0.30);
             border-color: rgba(79, 255, 214, 0.9);
             box-shadow: 0 0 20px rgba(79, 255, 214, 0.6), 0 3px 12px rgba(0,0,0,0.45);
             transform: scale(0.94);
         }
+        /* 硬降按钮：暖橙色强调 */
         #btnDrop { background: rgba(255, 180, 60, 0.20); border-color: rgba(255, 200, 90, 0.45); }
         #btnDrop.pressed, #btnDrop:active { background: rgba(255, 200, 90, 0.42); }
+        /* 十字键的空格占位：隐藏但占网格位置 */
         .dpad .spacer { pointer-events: none; visibility: hidden; }
 
+        /* ==================== 键盘提示（PC 显示，触屏隐藏） ==================== */
+        /* 抬高到虚拟按键上方（bottom: 132px），不会被 #touchPad 挡住 */
         #hintBar {
             position: fixed;
             bottom: calc(132px + env(safe-area-inset-bottom, 0px));
@@ -125,7 +149,7 @@
             font-size: 11px; color: #8fa3bd;
             white-space: nowrap; z-index: 10;
             pointer-events: none;
-            display: none;
+            display: none;              /* 由 JS 判断是否有触摸能力后决定显示 */
         }
         #hintBar kbd {
             display: inline-block;
@@ -136,6 +160,7 @@
             color: #cfe4ff; font-family: monospace; font-size: 11px;
         }
 
+        /* ==================== 开始 / 暂停 / 结束遮罩 ==================== */
         #overlay {
             position: fixed; inset: 0;
             display: flex; flex-direction: column;
@@ -144,11 +169,13 @@
             background: rgba(3, 5, 12, 0.82);
             backdrop-filter: blur(6px);
             z-index: 50;
+            /* visibility 一起过渡，避免隐藏时 backdrop-filter 还在做 blur pass */
             transition: opacity 0.25s ease, visibility 0.25s;
         }
         #overlay.hidden { opacity: 0; pointer-events: none; visibility: hidden; }
         #overlayTitle {
             font-size: 42px; font-weight: bold; letter-spacing: 6px;
+            /* 三色渐变文字 + 外发光 */
             background: linear-gradient(135deg, #4fffd6, #4f9dff, #c44fff);
             -webkit-background-clip: text; background-clip: text;
             -webkit-text-fill-color: transparent;
@@ -169,6 +196,8 @@
         #startBtn:hover { transform: translateY(-2px); box-shadow: 0 12px 36px rgba(79, 255, 214, 0.5); }
         #startBtn:active { transform: translateY(0); }
 
+        /* ==================== 消行得分飘字 ==================== */
+        /* 每次得分在屏幕中央弹出一行提示，动画结束自动移除 */
         #toastLayer { position: fixed; inset: 0; pointer-events: none; z-index: 40; display: flex; align-items: center; justify-content: center; }
         .toast {
             position: absolute;
@@ -178,6 +207,7 @@
             animation: toastFly 0.9s ease-out forwards;
             font-family: 'Consolas', monospace;
         }
+        /* 飘字动画：淡入放大 → 上浮 → 淡出 */
         @keyframes toastFly {
             0%   { opacity: 0; transform: translateY(20px) scale(0.7); }
             25%  { opacity: 1; transform: translateY(0) scale(1.1); }
@@ -185,6 +215,7 @@
             100% { opacity: 0; transform: translateY(-48px) scale(0.95); }
         }
 
+        /* ==================== 窄屏（≤420px）适配 ==================== */
         @media (max-width: 420px) {
             .dpad { grid-template-columns: repeat(3, 44px); grid-template-rows: repeat(2, 44px); gap: 5px; }
             .actions { grid-template-columns: 44px; grid-template-rows: repeat(2, 44px); gap: 5px; }
@@ -200,10 +231,13 @@
     </style>
 </head>
 <body>
+    <!-- 3D 画布容器：renderer.domElement 挂到这里 -->
     <div id="canvasWrap"></div>
 
+    <!-- 棋盘拖动条：按住平移棋盘，和旋转视角分离 -->
     <div id="dragHandle" title="按住拖动可移动棋盘位置">⋮⋮ 拖动移动</div>
 
+    <!-- 右上侧栏：记分牌 + NEXT 预览 + 重置视角 -->
     <div id="sidePanel">
         <div class="panel-section">
             <div class="row"><span class="label">SCORE</span><span id="scoreValue" class="value">0</span></div>
@@ -214,13 +248,17 @@
         <div class="panel-divider"></div>
         <div class="panel-section next-section">
             <div class="label">NEXT</div>
+            <!-- canvas 分辨率与 CSS 尺寸一致（45px），避免缩放模糊 -->
             <canvas id="nextCanvas" width="45" height="45"></canvas>
         </div>
         <div class="panel-divider"></div>
         <button id="resetViewBtn" tabindex="-1">重置视角</button>
     </div>
 
+    <!-- 底部虚拟按键：所有终端都显示。
+         tabindex="-1"：不进入 Tab 焦点序列，避免 PC 上 Tab 后按空格误触发 -->
     <div id="touchPad">
+        <!-- 左侧：十字方向键（上排留空 + 软降；下排 左/暂停/右） -->
         <div class="dpad">
             <button class="spacer" tabindex="-1" aria-hidden="true"></button>
             <button id="btnSoftDrop" tabindex="-1" aria-label="软降">▼</button>
@@ -229,19 +267,23 @@
             <button id="btnPauseTouch" tabindex="-1" aria-label="暂停">❚❚</button>
             <button id="btnRight" tabindex="-1" aria-label="右移">▶</button>
         </div>
+        <!-- 右侧：旋转 + 硬降 -->
         <div class="actions">
             <button id="btnRotate" tabindex="-1" aria-label="旋转">⟳</button>
             <button id="btnDrop" tabindex="-1" aria-label="硬降">⤓</button>
         </div>
     </div>
 
+    <!-- 键盘提示：PC 显示，触屏由 JS 隐藏 -->
     <div id="hintBar">
         <kbd>←</kbd><kbd>→</kbd> 移动 · <kbd>↑</kbd>/<kbd>W</kbd> 旋转 · <kbd>↓</kbd>/<kbd>S</kbd> 软降 ·
         <kbd>Space</kbd> 硬降 · <kbd>P</kbd> 暂停 · <kbd>R</kbd> 重开 · 左键拖动旋转视角
     </div>
 
+    <!-- 得分飘字层 -->
     <div id="toastLayer"></div>
 
+    <!-- 开始/暂停/结束遮罩 -->
     <div id="overlay">
         <div id="overlayTitle">3D 俄罗斯方块</div>
         <div id="overlaySub">奇异形状 · 颗粒方块 · 立体音效</div>
@@ -249,6 +291,7 @@
         <button id="startBtn">开始游戏</button>
     </div>
 
+    <!-- importmap：把 bare specifier "three" 映射到 CDN 的 ES Module URL -->
     <script type="importmap">
         {
             "imports": {
@@ -266,34 +309,49 @@
          *  一、游戏常量与棋盘数据结构
          * ================================================================ */
 
-        const COLS = 16;
-        const ROWS = 24;
-        const CELL = 1;
+        const COLS = 16;            // 棋盘列数（比经典 10 列更宽）
+        const ROWS = 24;            // 棋盘行数（比经典 20 行更高）
+        const CELL = 1;             // 每个格子在 3D 世界中的边长
 
+        /**
+         * 奇异形状定义。
+         * 每个形状用"若干 (col,row) 格子坐标"描述，坐标原点在形状包围盒左上角。
+         * 除经典 7 种 (I O T S Z J L) 外，加入 U、P、Y、W、十字、小三连、
+         * 五连条、对角三连、单格 DOT 等奇异形状。
+         * 旋转基于"绕包围盒中心顺时针旋转 90 度"实现，因此对任意不对称形状也成立。
+         * hue 是该形状的主色相（0..360），渲染时用 HSL 转成具体颜色。
+         */
         const SHAPES = {
-            I: { cells: [[0,0],[1,0],[2,0],[3,0]], hue: 190 },
-            O: { cells: [[0,0],[1,0],[0,1],[1,1]], hue: 45  },
-            T: { cells: [[0,0],[1,0],[2,0],[1,1]], hue: 280 },
-            S: { cells: [[1,0],[2,0],[0,1],[1,1]], hue: 130 },
-            Z: { cells: [[0,0],[1,0],[1,1],[2,1]], hue: 0   },
-            J: { cells: [[0,0],[0,1],[1,1],[2,1]], hue: 220 },
-            L: { cells: [[2,0],[0,1],[1,1],[2,1]], hue: 25  },
-            U: { cells: [[0,0],[2,0],[0,1],[1,1],[2,1]], hue: 300 },
-            P: { cells: [[0,0],[1,0],[0,1],[1,1],[0,2]], hue: 160 },
-            Y: { cells: [[1,0],[0,1],[1,1],[1,2]],       hue: 75  },
-            W: { cells: [[0,0],[0,1],[1,1],[1,2],[2,2]], hue: 250 },
-            CROSS: { cells: [[1,0],[0,1],[1,1],[2,1],[1,2]], hue: 340 },
-            T_SMALL: { cells: [[0,0],[1,0],[2,0]],       hue: 100 },
-            DOT: { cells: [[0,0]],                       hue: 60  },
-            LINE5: { cells: [[0,0],[1,0],[2,0],[3,0],[4,0]], hue: 200 },
-            DIAG: { cells: [[0,0],[1,1],[2,2]],          hue: 20  },
+            // ---- 经典七种 ----
+            I: { cells: [[0,0],[1,0],[2,0],[3,0]], hue: 190 },   // 长条
+            O: { cells: [[0,0],[1,0],[0,1],[1,1]], hue: 45  },   // 方块
+            T: { cells: [[0,0],[1,0],[2,0],[1,1]], hue: 280 },   // T 形
+            S: { cells: [[1,0],[2,0],[0,1],[1,1]], hue: 130 },   // S 形
+            Z: { cells: [[0,0],[1,0],[1,1],[2,1]], hue: 0   },   // Z 形
+            J: { cells: [[0,0],[0,1],[1,1],[2,1]], hue: 220 },   // J 形
+            L: { cells: [[2,0],[0,1],[1,1],[2,1]], hue: 25  },   // L 形
+            // ---- 奇异形状 ----
+            U: { cells: [[0,0],[2,0],[0,1],[1,1],[2,1]], hue: 300 },  // U 形
+            P: { cells: [[0,0],[1,0],[0,1],[1,1],[0,2]], hue: 160 },  // P 形
+            Y: { cells: [[1,0],[0,1],[1,1],[1,2]],       hue: 75  },  // Y 形
+            W: { cells: [[0,0],[0,1],[1,1],[1,2],[2,2]], hue: 250 },  // W 阶梯
+            CROSS: { cells: [[1,0],[0,1],[1,1],[2,1],[1,2]], hue: 340 }, // 十字
+            T_SMALL: { cells: [[0,0],[1,0],[2,0]],       hue: 100 },  // 小三连
+            DOT: { cells: [[0,0]],                       hue: 60  },  // 单格（最"奇异"）
+            LINE5: { cells: [[0,0],[1,0],[2,0],[3,0],[4,0]], hue: 200 }, // 五连条
+            DIAG: { cells: [[0,0],[1,1],[2,2]],          hue: 20  },  // 对角三连
         };
 
+        /**
+         * 形状抽取池：经典形状权重高（出现频繁），奇异形状偶尔出现。
+         * 数组里每个元素是一个形状 key，随机 pick 一个。
+         */
         const SHAPE_POOL = [
             'I','I','I','O','O','T','T','S','S','Z','Z','J','J','L','L',
             'U','P','Y','W','CROSS','T_SMALL','DIAG','LINE5','DOT'
         ];
 
+        // 棋盘二维数组：null = 空，否则存 { hue }（记录该格颜色色相，用于渲染）
         let board = [];
         function createBoard() {
             return Array.from({ length: ROWS }, () => new Array(COLS).fill(null));
@@ -305,11 +363,19 @@
 
         const wrap = document.getElementById('canvasWrap');
 
+        // 场景：深紫黑背景 + 雾效（雾的 near/far 在 animate 里每帧动态调整，
+        // 让棋盘永远在雾区之前，缩放时不会变暗）
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0x08080f);
         scene.fog = new THREE.Fog(0x08080f, 40, 80);
 
-        // 背景球：顶紫、中近黑、底黑
+        /**
+         * 发光背景球：一个大球内表面贴渐变色，营造"整个场景在发光"的氛围。
+         * 顶部深紫、中部近黑、底部黑，配合雾效让远处自然融入。
+         * 用顶点色实现上下渐变（球体几何自带 Y 方向分量）。
+         * side: BackSide → 只渲染内表面，相机在球内部看。
+         * fog: false → 背景球本身不受雾影响。
+         */
         const bgGeo = new THREE.SphereGeometry(80, 32, 16);
         const bgPos = bgGeo.attributes.position;
         const bgColors = new Float32Array(bgPos.count * 3);
@@ -318,7 +384,7 @@
         const bgBot = new THREE.Color(0x030305);   // 黑
         const bgTmp = new THREE.Color();
         for (let i = 0; i < bgPos.count; i++) {
-            const t = (bgPos.getY(i) / 80 + 1) * 0.5;
+            const t = (bgPos.getY(i) / 80 + 1) * 0.5;   // y 从 -80..80 映射到 0..1
             if (t > 0.5) bgTmp.copy(bgMid).lerp(bgTop, (t - 0.5) * 2);
             else bgTmp.copy(bgBot).lerp(bgMid, t * 2);
             bgColors[i * 3] = bgTmp.r;
@@ -330,21 +396,28 @@
             vertexColors: true, side: THREE.BackSide, fog: false
         })));
 
+        // 透视相机：45° 视野，远裁剪面 300（要覆盖 250 最大视距 + 背景球半径）
         const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 300);
-        camera.up.set(0, 1, 0);
+        camera.up.set(0, 1, 0);     // Y 轴向上
 
+        // 主渲染器
         const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
         renderer.setSize(window.innerWidth, window.innerHeight);
+        // 移动端检测：UA 或"有触摸且屏幕窄"都算移动端
         const isMobileNow = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)
             || (navigator.maxTouchPoints > 0 && window.innerWidth < 900);
+        // 移动端像素比限制 1.5，桌面 2（节省移动端 GPU 开销）
         renderer.setPixelRatio(Math.min(window.devicePixelRatio, isMobileNow ? 1.5 : 2));
+        // 移动端关阴影，省一次深度 pass
         renderer.shadowMap.enabled = !isMobileNow;
         renderer.shadowMap.type = THREE.PCFSoftShadowMap;
         renderer.outputColorSpace = THREE.SRGBColorSpace;
-        // 修复：关掉 ACES tone mapping。ACES 会压高光、去饱和，导致方块颜色发白发灰。
-        // NoToneMapping 下 emissive = instanceColor 时输出就是纯 sRGB 色，和 NEXT 预览一致。
+        // 关键：关掉 ACES tone mapping。ACES 会压高光、去饱和，
+        // 导致方块颜色发白发灰。NoToneMapping 下 emissive = instanceColor 时
+        // 输出就是纯 sRGB 色，和 NEXT 预览完全一致。
         renderer.toneMapping = THREE.NoToneMapping;
         wrap.appendChild(renderer.domElement);
+        // 防止 PC 鼠标拖拽时触发浏览器默认行为（文本选择/图片拖拽），干扰 OrbitControls
         renderer.domElement.style.touchAction = 'none';
         renderer.domElement.style.userSelect = 'none';
         renderer.domElement.style.outline = 'none';
@@ -352,6 +425,11 @@
         renderer.domElement.addEventListener('dragstart', (e) => e.preventDefault());
         renderer.domElement.addEventListener('selectstart', (e) => e.preventDefault());
 
+        /**
+         * OrbitControls：左键/单指拖 = 旋转视角，滚轮 = 缩放。
+         * 平移禁用（由拖动条负责），避免和旋转冲突。
+         * target 恒为原点（= 棋盘几何中心），所以旋转永远绕棋盘中心。
+         */
         const controls = new OrbitControls(camera, renderer.domElement);
         controls.enableDamping = true;
         controls.dampingFactor = 0.08;
@@ -359,7 +437,7 @@
         controls.enablePan = false;
         controls.enableZoom = true;
         controls.minDistance = 15;
-        controls.maxDistance = 250;
+        controls.maxDistance = 250;     // 竖屏需要 ~110，留足余量
         controls.minPolarAngle = 0;
         controls.maxPolarAngle = Math.PI;
         controls.minAzimuthAngle = -Infinity;
@@ -372,30 +450,53 @@
 
         /* ================================================================
          *  相机布局：view offset + 拖动偏移
-         * ================================================================ */
+         * ================================================================
+         *
+         * 相机始终看向 controls.target = 原点 = 棋盘几何中心，用 view offset
+         * 让棋盘在屏幕上偏移（竖屏偏左给侧栏让位）。
+         *
+         * 注意：view offset 会把有效 FOV 缩小到 1/VIEW_ZOOM，即画面放大 VIEW_ZOOM 倍。
+         * 因此布局计算里必须用 halfTan_eff = tan(fov/2) / VIEW_ZOOM，
+         * 否则算出来的相机距离不够，棋盘会超出屏幕。
+         */
 
-        const VIEW_ZOOM = 1.5;
+        const VIEW_ZOOM = 1.5;      // 虚拟全屏是实际屏幕的 1.5 倍（画面放大 1.5 倍）
 
         const dragHandle = document.getElementById('dragHandle');
 
+        // 用户拖动条产生的 view offset 增量（屏幕像素）。相机和 target 都不动，
+        // 只调 offsetX/offsetY，棋盘在屏幕上跟着鼠标移动，旋转中心仍在棋盘上。
         let dragViewOffsetX = 0;
         let dragViewOffsetY = 0;
 
+        // 当前布局的视线中心比例（由 computeLayout 更新）
         let currentCenterXRatio = 0.5;
         let currentCenterYRatio = 0.5;
 
+        /**
+         * 把视线中心（= 棋盘中心）投到屏幕的 (centerXRatio, centerYRatio) 位置。
+         * 原理：camera.setViewOffset(fullW, fullH, x, y, w, h) 表示"在 fullW×fullH
+         * 的虚拟全屏里取 (x,y,w,h) 这块子区域显示到 canvas"。子区域相对全屏中心
+         * 的偏移会让画面内容反向移动，从而实现"把某个世界点投到屏幕指定像素"。
+         */
         function applyViewOffset() {
             const w = window.innerWidth;
             const h = window.innerHeight;
             const fullW = VIEW_ZOOM * w;
             const fullH = VIEW_ZOOM * h;
+            // 拖动向右 → dragViewOffsetX 增大 → x 减小 → 画面内容向右移动
             let x = fullW / 2 - currentCenterXRatio * w - dragViewOffsetX;
             let y = fullH / 2 - currentCenterYRatio * h - dragViewOffsetY;
+            // clamp 到合法范围，避免 offset 超出虚拟全屏导致画面撕裂
             x = Math.max(0, Math.min(fullW - w, x));
             y = Math.max(0, Math.min(fullH - h, y));
             camera.setViewOffset(fullW, fullH, x, y, w, h);
         }
 
+        /**
+         * 更新拖动条位置（在棋盘顶部外侧 28px 处，高约 22 + 间距 6）。
+         * 拖动条宽度比棋盘略窄，限制在 90~140px。
+         */
         function updateDragHandle(boardLeftPx, boardTopPx, boardWPx) {
             const handleW = Math.min(Math.max(boardWPx - 20, 90), 140);
             dragHandle.style.display = 'block';
@@ -404,6 +505,10 @@
             dragHandle.style.width = handleW + 'px';
         }
 
+        /* ---------------- 拖动条交互 ---------------- */
+        // 拖动时只改 view offset，相机和 target 都不动。
+        // 这样拖动条拖到哪，棋盘就移到哪，旋转中心始终在棋盘上。
+
         let isDraggingBoard = false;
         let dragPointerId = null;
         let dragStartClientX = 0, dragStartClientY = 0;
@@ -411,9 +516,9 @@
         let dragStartHandleLeft = 0, dragStartHandleTop = 0;
 
         dragHandle.addEventListener('pointerdown', (e) => {
-            if (e.button !== undefined && e.button !== 0) return;
+            if (e.button !== undefined && e.button !== 0) return;   // 只响应主键
             e.preventDefault();
-            e.stopPropagation();
+            e.stopPropagation();        // 阻止事件冒泡到 OrbitControls，避免同时旋转
             isDraggingBoard = true;
             dragPointerId = e.pointerId;
             dragStartClientX = e.clientX;
@@ -433,6 +538,7 @@
             dragViewOffsetX = dragStartViewOffsetX + screenDx;
             dragViewOffsetY = dragStartViewOffsetY + screenDy;
             applyViewOffset();
+            // 拖动条跟随鼠标
             dragHandle.style.left = (dragStartHandleLeft + screenDx) + 'px';
             dragHandle.style.top = Math.max(4, dragStartHandleTop + screenDy) + 'px';
         });
@@ -447,10 +553,13 @@
         window.addEventListener('pointerup', endBoardDrag);
         window.addEventListener('pointercancel', endBoardDrag);
 
-        /* ---------------- 灯光（整体调低，让方块自发光颜色主导） ---------------- */
+        /* ---------------- 灯光 ---------------- */
+        // 整体调低，让方块的自发光颜色主导，不被灯光照白。
 
+        // 环境光：给所有物体一个基础亮度，避免暗部死黑
         scene.add(new THREE.AmbientLight(0xffffff, 0.25));
 
+        // 主光：暖白，从右上方打，投影到棋盘
         const keyLight = new THREE.DirectionalLight(0xffffff, 0.7);
         keyLight.position.set(12, 26, 14);
         keyLight.castShadow = true;
@@ -464,19 +573,22 @@
         keyLight.shadow.bias = -0.0008;
         scene.add(keyLight);
 
+        // 补光：冷蓝，从左侧打，让暗部不脏
         const fillLight = new THREE.DirectionalLight(0x8899ff, 0.25);
         fillLight.position.set(-14, 8, -6);
         scene.add(fillLight);
 
+        // 轮廓光：洋红，从后方打，勾出方块边缘
         const rimLight = new THREE.DirectionalLight(0xff66cc, 0.35);
         rimLight.position.set(0, 6, -18);
         scene.add(rimLight);
 
+        // 四盏彩色点光源：让方块表面反射出斑斓的光斑
         const colorPoints = [
-            { color: 0x00ffaa, pos: [10, 8, 8],  dist: 30 },
-            { color: 0xff44ff, pos: [-10, 6, 8], dist: 30 },
-            { color: 0x44aaff, pos: [0, 12, -10], dist: 30 },
-            { color: 0xffaa44, pos: [0, -4, 12], dist: 25 },
+            { color: 0x00ffaa, pos: [10, 8, 8],  dist: 30 },   // 青绿（右前上）
+            { color: 0xff44ff, pos: [-10, 6, 8], dist: 30 },   // 紫红（左前）
+            { color: 0x44aaff, pos: [0, 12, -10], dist: 30 },  // 天蓝（后上）
+            { color: 0xffaa44, pos: [0, -4, 12], dist: 25 },   // 暖橙（前下）
         ];
         colorPoints.forEach(({ color, pos, dist }) => {
             const pl = new THREE.PointLight(color, 0.3, dist);
@@ -484,12 +596,15 @@
             scene.add(pl);
         });
 
-        /* ---------------- 棋盘（暗色玻璃背景，不再深蓝） ---------------- */
+        /* ---------------- 棋盘（暗色玻璃背景） ---------------- */
 
+        // boardGroup 固定 position，使棋盘几何中心落在世界原点。
+        // 这样 controls.target = 原点 = 棋盘中心，旋转永远绕棋盘中心。
         const boardGroup = new THREE.Group();
         boardGroup.position.set(-BOARD_W / 2, -BOARD_H / 2, 0);
         scene.add(boardGroup);
 
+        // 背板：近黑玻璃质感（微弱紫调、低自发光），不抢方块颜色
         const backPlane = new THREE.Mesh(
             new THREE.PlaneGeometry(BOARD_W, BOARD_H),
             new THREE.MeshStandardMaterial({
@@ -506,7 +621,7 @@
         backPlane.receiveShadow = true;
         boardGroup.add(backPlane);
 
-        // 网格线：淡白青，低不透明度，不抢方块颜色
+        // 网格线：淡白青，低不透明度，提示格子位置但不抢眼
         const gridMat = new THREE.LineBasicMaterial({ color: 0x88aacc, transparent: true, opacity: 0.28 });
         const gridPts = [];
         for (let c = 0; c <= COLS; c++) {
@@ -517,6 +632,7 @@
         }
         boardGroup.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(gridPts), gridMat));
 
+        // 棋盘外框：青色霓虹细边框
         const frameGeo = new THREE.BufferGeometry().setFromPoints([
             new THREE.Vector3(0, 0, 0), new THREE.Vector3(BOARD_W, 0, 0),
             new THREE.Vector3(BOARD_W, BOARD_H, 0), new THREE.Vector3(0, BOARD_H, 0),
@@ -526,9 +642,16 @@
 
         /* ---------------- 环境贴图 ---------------- */
 
+        /**
+         * 程序化生成环境贴图（无需外部 HDR 文件）。
+         * 用一个临时 Scene + 渐变天空球 + 几个"柔光箱"平面，
+         * 再用 PMREMGenerator 预过滤成 mipmap 立方贴图。
+         * PMREM 是 MeshPhysicalMaterial 推荐的环境贴图格式（粗糙度正确模糊）。
+         */
         function buildEnvMap(renderer) {
             const envScene = new THREE.Scene();
 
+            // 渐变天空球：从顶到底的色带（顶部亮白、赤道冷蓝、底部深蓝）
             const skyGeo = new THREE.SphereGeometry(50, 32, 16);
             const posAttr = skyGeo.attributes.position;
             const colors = new Float32Array(posAttr.count * 3);
@@ -549,6 +672,7 @@
                 vertexColors: true, side: THREE.BackSide
             })));
 
+            // 加几个"柔光箱"：高亮平面，让方块有清晰的反射斑点
             const boxMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
             const boxGeo = new THREE.PlaneGeometry(14, 14);
             const addLightBox = (x, y, z) => {
@@ -557,14 +681,16 @@
                 m.lookAt(0, 0, 0);
                 envScene.add(m);
             };
-            addLightBox(0, 30, 0);
-            addLightBox(-24, 10, 20);
-            addLightBox(26, 8, -18);
+            addLightBox(0, 30, 0);          // 顶部主柔光
+            addLightBox(-24, 10, 20);       // 左前补光
+            addLightBox(26, 8, -18);        // 右后补光
 
+            // PMREM 预过滤：fromScene 同步返回 RenderTarget，取 .texture 即得环境贴图
             const pmrem = new THREE.PMREMGenerator(renderer);
             const envRT = pmrem.fromScene(envScene, 0.02);
             const envTex = envRT.texture;
             pmrem.dispose();
+            // 清理临时场景资源（renderTarget 的纹理保留，供材质使用）
             skyGeo.dispose(); boxGeo.dispose();
             return envTex;
         }
@@ -573,13 +699,19 @@
 
         /* ================================================================
          *  三、颗粒颜色与材质（活动 / 已固定共用，保证和 NEXT 一致）
-         * ================================================================ */
+         * ================================================================
+         *
+         * "小方块颗粒"：每个格子里不是整块，而是由 K×K×K 个更小的立方体拼成，
+         * 用 InstancedMesh 一次性绘制全部颗粒（性能远好于逐个 Mesh）。
+         * 桌面 2×2×2=8 颗/格；移动端 1×1×1=1 颗/格（省性能）。
+         */
 
         const IS_MOBILE = isMobileNow;
         const BEAD_SUB = IS_MOBILE ? 1 : 2;
-        const BEAD = BEAD_SUB === 1 ? 0.92 : 0.42;
+        const BEAD = BEAD_SUB === 1 ? 0.92 : 0.42;   // 颗粒边长，略小于格子避免面贴面 z-fighting
         const beadGeo = new THREE.BoxGeometry(BEAD, BEAD, BEAD);
-        // 修复全黑 bug：材质开了 vertexColors:true，但 BoxGeometry 没有 color 属性。
+
+        // 修复全黑 bug：材质开了 vertexColors: true，但 BoxGeometry 没有 color 属性。
         // GLSL 里缺失的 color 属性默认为 vec3(0,0,0)，会把 vColor 乘成 0，
         // 之后 instanceColor 再乘进来也还是 0 → 方块全黑。
         // 补一个全白的 color 属性：vColor = 1 * instanceColor = instanceColor，
@@ -591,6 +723,7 @@
             beadGeo.setAttribute('color', new THREE.BufferAttribute(white, 3));
         }
 
+        // 颗粒布局偏移表：相对格子中心的 K³ 个小方块位置
         const BEAD_OFFSETS = [];
         {
             const gap = CELL / BEAD_SUB;
@@ -602,6 +735,7 @@
                             x: BEAD_SUB === 1 ? 0 : base + i * gap,
                             y: BEAD_SUB === 1 ? 0 : base + j * gap,
                             z: BEAD_SUB === 1 ? 0 : base + k * gap,
+                            // 颗粒的三维索引，用来给颜色加确定性抖动
                             ix: i, iy: j, iz: k
                         });
                     }
@@ -613,12 +747,14 @@
         /**
          * 颗粒颜色：高饱和 + 中高亮度，和 NEXT 预览共用。
          * s 0.95~1.0、l 0.56~0.62 → 非常鲜艳的彩色。
+         * 用颗粒索引做确定性抖动（不用 Math.random，保证重绘颜色一致），
+         * 同一格子的颗粒保持相近色相，相邻颗粒有细微差异 → 像彩色糖粒。
          */
         function beadColor(hue, ix, iy, iz) {
             const jitter = ((ix * 7 + iy * 13 + iz * 23) % 10) / 10;
-            _hslColor.h = (hue + jitter * 20 - 10 + 360) % 360;
-            _hslColor.s = 0.95 + jitter * 0.05;
-            _hslColor.l = 0.56 + (1 - jitter) * 0.06;
+            _hslColor.h = (hue + jitter * 20 - 10 + 360) % 360;   // 色相 ±10°
+            _hslColor.s = 0.95 + jitter * 0.05;                   // 饱和度 0.95~1.0
+            _hslColor.l = 0.56 + (1 - jitter) * 0.06;             // 明度 0.56~0.62
             return new THREE.Color().setHSL(_hslColor.h / 360, _hslColor.s, _hslColor.l);
         }
 
@@ -629,6 +765,7 @@
          *   - onBeforeCompile 让 emissive 也乘 vColor → 每个颗粒发自己的亮色
          *   - 无 transmission，颜色不会被洗白
          *   - NoToneMapping 下 emissive 直接输出 sRGB 原色
+         *   - clearcoat + envMap 提供宝石般的光泽
          */
         const beadMaterial = new THREE.MeshPhysicalMaterial({
             color: 0xffffff,
@@ -643,6 +780,7 @@
             vertexColors: true,
         });
 
+        // 注入 shader：emissive 也乘 vColor，让每个颗粒发自己的颜色（而不是统一白色）
         beadMaterial.onBeforeCompile = (shader) => {
             shader.fragmentShader = shader.fragmentShader.replace(
                 '#include <emissivemap_fragment>',
@@ -651,6 +789,18 @@
             );
         };
 
+        /**
+         * 为一个形状创建一组颗粒 InstancedMesh。
+         * 一个"方块"（tetromino）在世界坐标中的占位：cells 里每个 (col,row) 是一个格子，
+         * 每个格子再展开成 BEAD_SUB^3 个颗粒。
+         *
+         * @param {number} hue - 方块色相
+         * @param {Array<[number,number]>} cells - 格子坐标（相对包围盒）
+         * @param {number} pivotCol - 形状包围盒宽度（用于把几何居中到旋转轴）
+         * @param {number} pivotRow - 形状包围盒高度
+         * @param {boolean} dynamic - 是否动态（活动方块 true，已固定 false）
+         * @returns {THREE.InstancedMesh}
+         */
         function createBeadMesh(hue, cells, pivotCol, pivotRow, dynamic = true) {
             const beadsPerCell = BEAD_OFFSETS.length;
             const count = cells.length * beadsPerCell;
@@ -660,6 +810,7 @@
             mesh.receiveShadow = true;
             mesh.instanceMatrix.setUsage(dynamic ? THREE.DynamicDrawUsage : THREE.StaticDrawUsage);
 
+            // 计算形状包围盒中心，把它对齐到 mesh 原点（这样旋转时绕形状中心转）
             const cx = pivotCol / 2;
             const cy = pivotRow / 2;
 
@@ -667,6 +818,7 @@
             const color = new THREE.Color();
             let idx = 0;
             for (const [c, r] of cells) {
+                // 格子中心相对形状包围盒中心的偏移（注意 row 向下增大，y 要取负）
                 const cellX = (c + 0.5) - cx;
                 const cellY = cy - (r + 0.5);
                 for (const off of BEAD_OFFSETS) {
@@ -683,13 +835,33 @@
         }
 
         /* ================================================================
-         *  四、音效合成
-         * ================================================================ */
+         *  四、音效合成（Web Audio API，无需外部音频资源）
+         * ================================================================
+         *
+         * 所有音效都是程序合成的：
+         *   - move / rotate：短促的方波"嘀"
+         *   - lock：低频三角波"咚"
+         *   - clear：上行琶音，根据消行数变调
+         *   - gameover：下行滑音
+         */
 
         let audioCtx = null;
         let audioUnlocked = false;
 
+        /**
+         * 创建 / 恢复 AudioContext，并完成移动端浏览器的"音频解锁"。
+         *
+         * 移动端（尤其 iOS Safari）必须满足以下条件才会有声音：
+         *   1. AudioContext 必须在**用户手势**中创建或 resume
+         *   2. resume() 是异步的，必须等它完成后再播放
+         *   3. 需要"解锁"：在手势里播放一个几乎无声的 buffer
+         *   4. iOS 静音键：设 navigator.audioSession.type = 'playback'，
+         *      让网页音频走"媒体播放"通道，不受静音开关影响（iOS 17+）
+         *
+         * 该函数可重复调用，已解锁时直接返回。
+         */
         function initAudio() {
+            // 快速路径：已解锁且上下文在运行，直接返回
             if (audioUnlocked && audioCtx && audioCtx.state === 'running') return;
 
             try {
@@ -703,6 +875,7 @@
                 catch (e) { console.warn('AudioContext 创建失败', e); return; }
             }
 
+            // 播放一个 1 帧的静音 buffer：让移动端真正"解锁"音频
             const markUnlocked = () => {
                 if (audioUnlocked) return;
                 try {
@@ -725,7 +898,16 @@
             else markUnlocked();
         }
 
+        /**
+         * 播放一个简单的振荡器音符
+         * @param {number} freq     - 频率 Hz
+         * @param {number} dur      - 时长 秒
+         * @param {string} type     - 波形 'sine'|'square'|'triangle'|'sawtooth'
+         * @param {number} gain     - 音量 0..1
+         * @param {number} freqEnd  - 可选：滑音结束频率（不传则保持 freq）
+         */
         function playTone(freq, dur = 0.08, type = 'square', gain = 0.07, freqEnd = null) {
+            // 上下文不存在或未运行（移动端常见）：静默跳过，不抛错
             if (!audioCtx || audioCtx.state !== 'running') return;
             const t0 = audioCtx.currentTime;
             const osc = audioCtx.createOscillator();
@@ -735,6 +917,8 @@
             if (freqEnd !== null) {
                 osc.frequency.exponentialRampToValueAtTime(Math.max(1, freqEnd), t0 + dur);
             }
+            // ADSR 简化版：快速起音 + 指数衰减，避免爆音
+            // 注意用 0.0001 而不是 0，exponentialRamp 不接受 0
             env.gain.setValueAtTime(0.0001, t0);
             env.gain.exponentialRampToValueAtTime(gain, t0 + 0.006);
             env.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
@@ -748,6 +932,7 @@
             rotate: () => playTone(720, 0.06, 'square', 0.04),
             lock:   () => playTone(160, 0.13, 'triangle', 0.11, 70),
             softDrop: () => playTone(300, 0.03, 'square', 0.02),
+            // 消行：以基础音为起点，上行琶音，行数越多音越高
             clear(rows) {
                 const base = 520;
                 const steps = [0, 4, 7, 12, 16, 19];
@@ -756,10 +941,12 @@
                     setTimeout(() => playTone(base * Math.pow(2, steps[i] / 12), 0.11, 'triangle', 0.075), i * 55);
                 }
             },
+            // 升级：明亮的大三和弦
             levelUp() {
                 [523.25, 659.25, 783.99].forEach((f, i) =>
                     setTimeout(() => playTone(f, 0.22, 'sine', 0.08), i * 80));
             },
+            // 游戏结束：下行滑音
             gameOver() {
                 playTone(440, 0.7, 'sawtooth', 0.08, 60);
             }
@@ -777,12 +964,24 @@
             running: false,
             paused: false,
             over: false,
-            dropTimer: 0,
-            dropInterval: 0.9,
+            dropTimer: 0,        // 距离下次自动下落的累计时间（秒）
+            dropInterval: 0.9,   // 自动下落间隔（秒），随等级减小
         };
 
+        // 当前活动方块
+        // piece = { key, hue, cells, cellsW, cellsH, col, row, rot, mesh }
         let piece = null;
 
+        /* ---------------- 棋盘坐标 ↔ 世界坐标 ---------------- */
+
+        /**
+         * 把"连续格子坐标"映射到 boardGroup 内的局部世界坐标。
+         * 这里 col/row 可以是小数：col=0 表示棋盘左边界，col=COLS 表示右边界；
+         * row=0 表示上边界，row=ROWS 表示下边界。
+         *   x = col            （棋盘 x 方向与原点是线性对应的）
+         *   y = ROWS - row     （row 向下增大，而 Three.js y 向上）
+         * 因此：整数 (c, r) 的"格子中心" = cellCenterToWorld(c + 0.5, r + 0.5)
+         */
         function cellToWorld(col, row, z = 0) {
             return new THREE.Vector3(col, ROWS - row, z);
         }
@@ -790,26 +989,47 @@
             return cellToWorld(c + 0.5, r + 0.5, z);
         }
 
+        /* ---------------- 形状旋转 ---------------- */
+
+        /**
+         * 把形状的格子坐标绕包围盒中心顺时针旋转 90°（屏幕视角，row 向下为屏幕下方）。
+         *
+         * 推导：屏幕坐标 x=col 向右，y=row 向下。
+         *   屏幕顺时针 90° 的映射为 (x, y) → (y, -x)；离散化并归一化后：
+         *     (c, r) → (r, W-1-c)   （W 为旋转前包围盒宽度）
+         *   这样 T 的顶部横排顺时针后会变成右侧竖排，符合直觉。
+         *
+         * @param {Array<[number,number]>} cells
+         * @returns {Array<[number,number]>} 旋转后的格子坐标（已归一化到左上角）
+         */
         function rotateCells(cells) {
+            // 计算当前包围盒宽度（c 的最大值 + 1）
             let maxC = 0;
             for (const [c] of cells) maxC = Math.max(maxC, c);
             const W = maxC + 1;
+            // (c, r) → (r, W - 1 - c)，再平移使最小值归零
             const rotated = cells.map(([c, r]) => [r, W - 1 - c]);
+            // 归一化：把最小 col/row 平移到 0
             let minC = Infinity, minR = Infinity;
             for (const [c, r] of rotated) { minC = Math.min(minC, c); minR = Math.min(minR, r); }
             return rotated.map(([c, r]) => [c - minC, r - minR]);
         }
 
+        /** 计算一组格子的包围盒（宽、高） */
         function cellsBounds(cells) {
             let maxC = 0, maxR = 0;
             for (const [c, r] of cells) { maxC = Math.max(maxC, c); maxR = Math.max(maxR, r); }
             return { w: maxC + 1, h: maxR + 1 };
         }
 
+        /**
+         * 生成一个随机方块（含形状选择 + 初始颜色 + 网格构建）
+         * @param {string|null} forceKey - 强制指定形状（用于预览一致性），null 则随机
+         */
         function makePiece(forceKey = null) {
             const key = forceKey || SHAPE_POOL[Math.floor(Math.random() * SHAPE_POOL.length)];
             const def = SHAPES[key];
-            const cells = def.cells.map(([c, r]) => [c, r]);
+            const cells = def.cells.map(([c, r]) => [c, r]);  // 深拷贝
             const { w, h } = cellsBounds(cells);
             return {
                 key,
@@ -817,37 +1037,57 @@
                 cells,
                 cellsW: w,
                 cellsH: h,
-                col: Math.floor((COLS - w) / 2),
-                row: 0,
+                col: Math.floor((COLS - w) / 2),  // 水平居中出生
+                row: 0,                            // 从顶部出现
                 rot: 0,
                 mesh: null,
             };
         }
 
+        // 下一块：提前生成，便于右上角预览
         let nextKey = null;
         function pickNextKey() {
             return SHAPE_POOL[Math.floor(Math.random() * SHAPE_POOL.length)];
         }
 
+        /* ---------------- 方块碰撞检测 ---------------- */
+
+        /**
+         * 判断方块在给定位置/朝向是否合法（不越界、不重叠）
+         * @param {object} p - piece
+         * @param {number} dc - col 偏移
+         * @param {number} dr - row 偏移
+         * @param {Array<[number,number]>|null} cells - 可选：指定格子坐标（旋转预判用）
+         * @returns {boolean}
+         */
         function isValid(p, dc = 0, dr = 0, cells = null) {
             const cs = cells || p.cells;
             for (const [c, r] of cs) {
                 const nc = p.col + c + dc;
                 const nr = p.row + r + dr;
-                if (nc < 0 || nc >= COLS) return false;
-                if (nr < 0 || nr >= ROWS) return false;
-                if (board[nr][nc]) return false;
+                if (nc < 0 || nc >= COLS) return false;   // 左右越界
+                if (nr < 0 || nr >= ROWS) return false;   // 上下越界（含顶部以上，统一禁止）
+                if (board[nr][nc]) return false;          // 与已固定方块重叠
             }
             return true;
         }
 
-        // 共享几何体 + 共享材质：只 dispose mesh 自身（instanceMatrix / instanceColor）
+        /**
+         * 释放一个颗粒 mesh 的显示资源。
+         * 注意：所有 InstancedMesh 共享同一个 beadGeo 和 beadMaterial，
+         * 绝不能 dispose 它们——否则其他方块会一起消失。
+         * 只调用 mesh.dispose() 释放 instanceMatrix / instanceColor 等 GPU buffer。
+         */
         function disposeBeadMesh(mesh) {
             if (!mesh) return;
             boardGroup.remove(mesh);
             if (typeof mesh.dispose === 'function') mesh.dispose();
         }
 
+        /**
+         * 创建或重建活动方块的 InstancedMesh，并按当前格子位置摆放到 boardGroup。
+         * 因为形状旋转后格子集合会变，最稳妥的做法是每次移动/旋转都重建 mesh 的位置矩阵。
+         */
         function buildPieceMesh(p) {
             if (p.mesh) disposeBeadMesh(p.mesh);
             const { w, h } = cellsBounds(p.cells);
@@ -858,21 +1098,40 @@
             positionPieceMesh(p);
         }
 
+        /**
+         * 按方块的棋盘坐标更新其在 boardGroup 中的整体位置。
+         * 由于 createBeadMesh 已把几何居中到形状包围盒中心，
+         * 这里只需把 mesh 放到"包围盒中心对应的世界坐标"即可。
+         */
         function positionPieceMesh(p) {
             if (!p.mesh) return;
             const { w, h } = cellsBounds(p.cells);
+            // 活动方块微微前移（z = 0.12），避免与背板 / 已固定方块 z-fighting
             const center = cellToWorld(p.col + w / 2, p.row + h / 2, 0.12);
             p.mesh.position.copy(center);
         }
 
         /* ================================================================
-         *  六、已固定方块的渲染（单个 InstancedMesh，共用 beadMaterial）
-         * ================================================================ */
+         *  六、已固定方块的渲染
+         * ================================================================
+         *
+         * 所有已固定的格子合并到一个 InstancedMesh 里：
+         *   - 单 draw call 画完所有已固定颗粒（避免最坏 384 个 mesh）
+         *   - 非 transmission 材质，避免每帧离屏采样
+         *   - 用 instanceColor 给每个颗粒单独着色
+         *   - 消行后只重建这一个 InstancedMesh 的矩阵和颜色，复用 GPU buffer
+         */
 
         let settledMesh = null;
         let settledCapacity = 0;
 
+        /**
+         * 根据 board 数组重建已固定方块的显示。
+         * 逐格渲染：每个被占格子画成一组颗粒（BEAD_OFFSETS.length 颗），
+         * 色相取该格的 hue。这样消除行后形状被打散也没关系。
+         */
         function rebuildSettledMesh() {
+            // 统计当前被占格子数
             let cellCount = 0;
             for (let r = 0; r < ROWS; r++)
                 for (let c = 0; c < COLS; c++)
@@ -880,6 +1139,7 @@
 
             const total = cellCount * BEAD_OFFSETS.length;
             if (total === 0) {
+                // 棋盘空：销毁 settledMesh
                 if (settledMesh) {
                     boardGroup.remove(settledMesh);
                     if (typeof settledMesh.dispose === 'function') settledMesh.dispose();
@@ -889,6 +1149,7 @@
                 return;
             }
 
+            // 容量不够就重建（一次性分配最大容量，避免频繁扩容）
             if (!settledMesh || settledCapacity < total) {
                 if (settledMesh) {
                     boardGroup.remove(settledMesh);
@@ -902,6 +1163,7 @@
                 boardGroup.add(settledMesh);
             }
 
+            // 只渲染前 total 个实例（其余槽位不显示）
             settledMesh.count = total;
 
             const m = new THREE.Matrix4();
@@ -926,6 +1188,12 @@
             if (settledMesh.instanceColor) settledMesh.instanceColor.needsUpdate = true;
         }
 
+        /**
+         * 把一个形状固定到棋盘：
+         *   - 更新 board 数组
+         *   - 重建已固定方块的显示
+         *   - 移除活动方块的 mesh
+         */
         function settlePiece(p) {
             for (const [c, r] of p.cells) {
                 const nc = p.col + c;
@@ -941,6 +1209,18 @@
             }
         }
 
+        /**
+         * 清除满行：
+         *   1. 找出所有满行
+         *   2. 从 board 中删除这些行，顶部补空行
+         *   3. 重建已固定方块
+         *   4. 返回消掉的行数
+         *
+         * 关键：不能用"按原始行号 splice + unshift"的写法。
+         * 因为每次 splice/unshift 都会改变数组下标，第二次再按旧行号删，就会删错行。
+         * 正确做法是重建：按物理规则"满行上方的行下移、下方行不动"，
+         * 自底向上收集所有非满行，落到新棋盘底部，顶部补空行。
+         */
         function clearLines() {
             const fullRows = [];
             for (let r = 0; r < ROWS; r++) {
@@ -952,8 +1232,10 @@
             for (let r = ROWS - 1; r >= 0; r--) {
                 if (!fullRows.includes(r)) kept.push(board[r]);
             }
+            // kept 现在是"从底到顶"的顺序；反转为"从顶到底"，再在顶部补空行
             kept.reverse();
             while (kept.length < ROWS) kept.unshift(new Array(COLS).fill(null));
+            // 原地替换 board 内容，保持 board 变量引用不变
             for (let r = 0; r < ROWS; r++) board[r] = kept[r];
 
             rebuildSettledMesh();
@@ -974,6 +1256,7 @@
         const overlayScore = document.getElementById('overlayScore');
         const startBtn = document.getElementById('startBtn');
 
+        /** 刷新 HUD 数字 */
         function updateHud() {
             elScore.textContent = state.score;
             elLevel.textContent = state.level;
@@ -981,13 +1264,16 @@
             elBest.textContent = state.best;
         }
 
+        /** 根据等级计算自动下落间隔（等级越高越快，下限 0.08s） */
         function computeDropInterval() {
             return Math.max(0.08, 0.9 - (state.level - 1) * 0.07);
         }
 
+        /** 生成并激活下一块 */
         function spawnPiece() {
             const key = nextKey || pickNextKey();
             const p = makePiece(key);
+            // 出生时如果直接撞上已固定方块 → 游戏结束
             if (!isValid(p, 0, 0)) {
                 gameOver();
                 return;
@@ -998,6 +1284,7 @@
             drawNextPreview();
         }
 
+        /** 移动方块（dc, dr） */
         function movePiece(dc, dr, sfxName = 'move') {
             if (!piece) return false;
             if (isValid(piece, dc, dr)) {
@@ -1010,9 +1297,11 @@
             return false;
         }
 
+        /** 旋转方块（绕形状包围盒中心） */
         function rotatePiece() {
             if (!piece) return;
             const rotated = rotateCells(piece.cells);
+            // 尝试"墙踢"：旋转后若越界/重叠，向左右各试 1~2 格
             const kicks = [[0, 0], [-1, 0], [1, 0], [-2, 0], [2, 0]];
             for (const [dc, dr] of kicks) {
                 if (isValid(piece, dc, dr, rotated)) {
@@ -1020,6 +1309,7 @@
                     piece.col += dc;
                     piece.row += dr;
                     piece.rot = (piece.rot + 1) % 4;
+                    // 旋转会改变包围盒 → 重建几何（保证居中）
                     buildPieceMesh(piece);
                     SFX.rotate();
                     return;
@@ -1027,6 +1317,7 @@
             }
         }
 
+        /** 硬降：一路下到底，立即固定 */
         function hardDrop() {
             if (!piece) return;
             let dropped = 0;
@@ -1035,7 +1326,9 @@
                 dropped++;
             }
             positionPieceMesh(piece);
+            // 硬降奖励少量分数（每格 2 分）
             state.score += dropped * 2;
+            // 硬降加分后立即刷新 BEST，不等到消行/结束
             if (state.score > state.best) {
                 state.best = state.score;
                 localStorage.setItem('tetris3d_best', String(state.best));
@@ -1044,6 +1337,7 @@
             lockPiece();
         }
 
+        /** 固定当前方块 + 消行 + 生成下一块 */
         function lockPiece() {
             if (!piece) return;
             settlePiece(piece);
@@ -1051,12 +1345,14 @@
 
             const cleared = clearLines();
             if (cleared > 0) {
+                // 计分：1行=100, 2行=300, 3行=500, 4行=800（再乘等级系数）
                 const table = { 1: 100, 2: 300, 3: 500, 4: 800 };
                 const gained = (table[cleared] || cleared * 200) * state.level;
                 state.score += gained;
                 state.lines += cleared;
                 showToast(`+${gained}`);
 
+                // 每 10 行升 1 级
                 const newLevel = Math.floor(state.lines / 10) + 1;
                 if (newLevel > state.level) {
                     state.level = newLevel;
@@ -1077,6 +1373,7 @@
             spawnPiece();
         }
 
+        /** 游戏结束 */
         function gameOver() {
             state.running = false;
             state.over = true;
@@ -1093,8 +1390,10 @@
             overlay.classList.remove('hidden');
         }
 
+        /** 开始 / 重开一局 */
         function startGame() {
-            initAudio();
+            initAudio();     // 用户点击后初始化音频（浏览器要求）
+            // 清空场景中所有方块
             if (piece && piece.mesh) {
                 disposeBeadMesh(piece.mesh);
             }
@@ -1122,6 +1421,7 @@
             overlay.classList.add('hidden');
         }
 
+        /** 暂停 / 继续 */
         function togglePause() {
             if (!state.running) return;
             state.paused = !state.paused;
@@ -1136,21 +1436,33 @@
             }
         }
 
+        /* ---------------- 飘字提示 ---------------- */
+
         const toastLayer = document.getElementById('toastLayer');
+        /**
+         * 弹出一个得分飘字，随机横向偏移避免堆叠
+         * @param {string} text
+         */
         function showToast(text) {
             const div = document.createElement('div');
             div.className = 'toast';
             div.textContent = text;
+            // 随机水平偏移 -120..120 px，让多个飘字错开
             div.style.marginLeft = `${(Math.random() * 240 - 120).toFixed(0)}px`;
             toastLayer.appendChild(div);
+            // 动画结束后移除节点
             setTimeout(() => div.remove(), 950);
         }
 
-        /* ---------------- 下一块预览（和 3D 共用 beadColor，颜色一致） ---------------- */
+        /* ---------------- 下一块预览（2D canvas） ---------------- */
 
         const nextCanvas = document.getElementById('nextCanvas');
         const nextCtx = nextCanvas.getContext('2d');
 
+        /**
+         * 在右上角小 canvas 上画出下一块（俯视缩略，按色相着色）。
+         * 和 3D 共用 beadColor，保证颜色完全一致。
+         */
         function drawNextPreview() {
             const w = nextCanvas.width, h = nextCanvas.height;
             nextCtx.clearRect(0, 0, w, h);
@@ -1162,6 +1474,7 @@
             const ox = (w - cellSize * bw) / 2;
             const oy = (h - cellSize * bh) / 2;
 
+            // 宽形状（LINE5 等）格子很小时，圆角半径不能超过格子一半
             const inner = Math.max(0, cellSize - 4);
             const r = Math.max(1, Math.min(4, inner / 2));
 
@@ -1174,6 +1487,7 @@
             }
         }
 
+        /** 2D canvas 的圆角矩形路径 */
         function roundRect(ctx, x, y, w, h, r) {
             ctx.beginPath();
             ctx.moveTo(x + r, y);
@@ -1186,8 +1500,15 @@
 
         /* ================================================================
          *  八、相机布局
-         * ================================================================ */
-
+         * ================================================================
+         *
+         * computeLayout 负责两件事：
+         *   1. （仅 isReset=true 时）按屏幕尺寸算相机距离，并重置拖动偏移
+         *   2. 按当前相机距离算棋盘在屏幕上的尺寸/位置，更新 view offset 和拖动条
+         *
+         * 关键：view offset 会把有效 FOV 缩小到 1/VIEW_ZOOM，
+         * 布局计算里必须用 halfTanV = tan(fov/2) / VIEW_ZOOM，否则棋盘会撑爆屏幕。
+         */
         function computeLayout(isReset) {
             const w = window.innerWidth;
             const h = window.innerHeight;
@@ -1195,72 +1516,87 @@
             const isPortrait = aspect < 1;
             const isNarrow = w < 420;
 
-            const sidebarW = 128;
-            const leftMargin = 12;
-            const topMargin = 48;
+            const sidebarW = 128;       // 右侧侧栏宽度（含间距）
+            const leftMargin = 12;      // 棋盘左边缘距屏幕左边
+            const topMargin = 48;       // 棋盘顶部距屏幕顶部（给拖动条留空间）
 
+            // 底部虚拟按键占高，留余量避免遮挡棋盘底部
             const isTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
             const touchH = isNarrow ? 145 : (isTouch ? 140 : 133);
 
+            // 竖屏：视线中心偏左，给右侧侧栏让位；横屏：居中
             currentCenterXRatio = isPortrait ? 0.32 : 0.5;
 
+            // 重置时清零拖动偏移
             if (isReset) {
                 dragViewOffsetX = 0;
                 dragViewOffsetY = 0;
             }
 
+            // 有效 FOV：view offset 缩小到 1/VIEW_ZOOM
             const vFov = THREE.MathUtils.degToRad(camera.fov);
             const halfTanV_full = Math.tan(vFov / 2);
             const halfTanH_full = halfTanV_full * aspect;
             const halfTanV = halfTanV_full / VIEW_ZOOM;
             const halfTanH = halfTanH_full / VIEW_ZOOM;
 
+            // 水平方向约束：棋盘在屏幕上的像素宽
             let maxBoardWpx;
             if (isPortrait) {
+                // 竖屏：棋盘左右都要留边距（左边 leftMargin，右边侧栏 sidebarW）
                 maxBoardWpx = Math.min(
                     2 * (currentCenterXRatio * w - leftMargin),
                     2 * (w - sidebarW - currentCenterXRatio * w)
                 );
             } else {
+                // 横屏：棋盘居中，左右对称留边
                 maxBoardWpx = Math.min(
                     2 * (w / 2 - leftMargin),
                     2 * (w / 2 - sidebarW)
                 );
             }
-            maxBoardWpx = Math.max(120, maxBoardWpx);
+            maxBoardWpx = Math.max(120, maxBoardWpx);   // 下限 120px，避免极端窄屏算成 0
             const minVisibleW = BOARD_W * w / maxBoardWpx;
             const minDistH = minVisibleW / (2 * halfTanH);
 
+            // 垂直方向约束：棋盘顶部 topMargin，底部留 touchH 给虚拟按键
             const maxBoardHpx = Math.max(120, h - touchH - topMargin);
             const minVisibleH = BOARD_H * h / maxBoardHpx;
             const minDistV = minVisibleH / (2 * halfTanV);
 
+            // 仅重置时重新算相机距离和位置
             if (isReset) {
                 const halfW = BOARD_W / 2;
                 const halfH = BOARD_H / 2;
                 const marginV = isPortrait ? 1.20 : 1.12;
                 const marginH = isPortrait ? 1.30 : 1.08;
+                // 基础距离：保证最小视角（棋盘不会贴脸）
                 const baseDist = Math.max(
                     (halfH * marginV) / halfTanV,
                     (halfW * marginH) / halfTanH,
                     26
                 );
+                // 取所有约束的最大值
                 const finalDist = Math.max(baseDist, minDistH, minDistV);
                 controls.target.set(0, 0, 0);
+                // 相机方向：从右前方上方俯视
                 const dir = new THREE.Vector3(0.5, 0.22, 1).normalize();
                 camera.position.copy(dir).multiplyScalar(finalDist);
                 controls.update();
             }
 
+            // 用当前相机距离算棋盘屏幕尺寸（注意用有效 FOV）
             const dist = camera.position.distanceTo(controls.target);
             const visibleW = 2 * dist * halfTanH;
             const visibleH = 2 * dist * halfTanV;
             const boardWpx = BOARD_W / visibleW * w;
             const boardHpx = BOARD_H / visibleH * h;
+            // 视线中心的垂直比例：让棋盘顶部在 topMargin 处
             currentCenterYRatio = (topMargin + boardHpx / 2) / h;
 
             applyViewOffset();
 
+            // 拖动条位置：考虑拖动偏移
             const boardCenterXpx = currentCenterXRatio * w + dragViewOffsetX;
             const boardCenterYpx = currentCenterYRatio * h + dragViewOffsetY;
             const boardTopPx = boardCenterYpx - boardHpx / 2;
@@ -1271,23 +1607,33 @@
         function resetCamera() { computeLayout(true); }
         function refreshLayout() { computeLayout(false); }
 
+        // 首次布局（boardGroup 已创建，camera / controls 已就绪）
         resetCamera();
 
         /* ================================================================
          *  九、输入处理
          * ================================================================ */
 
+        /*
+         * 音频解锁：在**任何**用户手势里都尝试初始化/恢复 AudioContext。
+         * 移动端浏览器要求在真实手势（touchstart/pointerdown/click）中解锁，
+         * 绑定在这里比只在"开始游戏"里调用更可靠。
+         * capture + passive：只旁路监听，不影响游戏自己的按键处理。
+         */
         ['pointerdown', 'touchstart', 'keydown'].forEach((evt) => {
             window.addEventListener(evt, () => initAudio(), { capture: true, passive: true });
         });
 
+        // 手机切到后台再回来时，AudioContext 常被浏览器挂起 → 回来后重新 resume
         document.addEventListener('visibilitychange', () => {
             if (document.visibilityState === 'visible' && audioCtx && audioCtx.state === 'suspended') {
                 audioCtx.resume().catch(() => {});
             }
         });
 
+        // 键盘输入
         document.addEventListener('keydown', (e) => {
+            // 暂停/重开任何时候都可用
             if (e.key === 'p' || e.key === 'P') { togglePause(); return; }
             if (e.key === 'r' || e.key === 'R') { startGame(); return; }
             if (!state.running || state.paused) return;
@@ -1303,27 +1649,42 @@
             }
         });
 
+        // 遮罩按钮：暂停时点 = 继续；否则 = 开始/重开
         startBtn.addEventListener('click', () => {
             if (state.paused) { togglePause(); }
             else { startGame(); }
         });
 
+        // 重置视角按钮：把棋盘拖到别处后，一键回到默认位置
         document.getElementById('resetViewBtn').addEventListener('click', () => {
             resetCamera();
         });
 
+        // 虚拟按键在所有终端都显示
         document.getElementById('touchPad').classList.add('show');
 
+        // 键盘提示：PC（无触摸能力）显示，触屏隐藏
         const hasTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
         const hintBarEl = document.getElementById('hintBar');
         if (hintBarEl) hintBarEl.style.display = hasTouch ? 'none' : 'block';
 
+        /**
+         * 绑定一个虚拟按键，支持"点一下"与"长按连发"。
+         *
+         * 触屏体验的关键：
+         *   - pointerdown 立即触发一次（响应延迟最低）
+         *   - 按住超过 initialDelay 后，每隔 repeatInterval 再触发一次（连发）
+         *   - pointerup / pointercancel / lostpointercapture 都要停止连发，
+         *     否则手指滑出按钮后会永远重复
+         *   - setPointerCapture 把指针锁在按钮上，手指轻微滑动不丢失事件
+         *   - e.preventDefault() 阻止长按导致的文字选择/右键菜单
+         */
         function bindTouchBtn(id, onFire, opts = {}) {
             const { repeat = false, initialDelay = 220, repeatInterval = 70 } = opts;
             const btn = document.getElementById(id);
-            let holdTimer = null;
-            let repeatTimer = null;
-            let activePointer = null;
+            let holdTimer = null;       // 首次连发的延时定时器
+            let repeatTimer = null;     // 连发间隔定时器
+            let activePointer = null;   // 当前按下的 pointerId
 
             const stop = () => {
                 if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; }
@@ -1333,17 +1694,18 @@
             };
 
             btn.addEventListener('pointerdown', (e) => {
-                if (e.button !== undefined && e.button !== 0) return;
+                if (e.button !== undefined && e.button !== 0) return;   // 只响应主键
                 e.preventDefault();
-                if (activePointer !== null) return;
+                if (activePointer !== null) return;     // 同一次按下不重复进入
                 activePointer = e.pointerId;
                 try { btn.setPointerCapture(e.pointerId); } catch (_) {}
                 btn.classList.add('pressed');
 
                 const fire = () => { if (state.running && !state.paused) onFire(); };
-                fire();
+                fire();     // 立刻响应一次
 
                 if (repeat) {
+                    // 按住一段时间后进入连发，避免"点一下也连发"
                     holdTimer = setTimeout(() => {
                         holdTimer = null;
                         repeatTimer = setInterval(fire, repeatInterval);
@@ -1351,9 +1713,11 @@
                 }
             });
 
+            // 松手 / 取消 / 失去捕获 都停止
             btn.addEventListener('pointerup', stop);
             btn.addEventListener('pointercancel', stop);
             btn.addEventListener('lostpointercapture', stop);
+            // 阻止长按菜单与双击缩放
             btn.addEventListener('contextmenu', (e) => e.preventDefault());
         }
 
@@ -1363,6 +1727,7 @@
                     { repeat: true, initialDelay: 120, repeatInterval: 60 });
         bindTouchBtn('btnRotate', () => rotatePiece());
         bindTouchBtn('btnDrop',   () => hardDrop());
+        // 暂停键：调用 togglePause（它内部会检查 running）
         document.getElementById('btnPauseTouch').addEventListener('pointerdown', (e) => {
             e.preventDefault();
             togglePause();
@@ -1376,24 +1741,29 @@
 
         function animate() {
             requestAnimationFrame(animate);
-            const dt = Math.min(clock.getDelta(), 0.1);
+            const dt = Math.min(clock.getDelta(), 0.1);   // 限制 dt，避免切后台回来后一次跳太多
 
+            // 动态雾效：让棋盘始终在雾区之前，缩放不会变暗
+            // （camDist 是相机到棋盘中心的距离，fog.near 设在 camDist+20 之前）
             const camDist = camera.position.distanceTo(controls.target);
             if (scene.fog) {
                 scene.fog.near = camDist + 20;
                 scene.fog.far = camDist + 60;
             }
 
+            // 自动下落（只在运行且未暂停时）
             if (state.running && !state.paused && piece) {
                 state.dropTimer += dt;
                 if (state.dropTimer >= state.dropInterval) {
                     state.dropTimer = 0;
                     if (!movePiece(0, 1, null)) {
+                        // 无法继续下落 → 固定并结算
                         lockPiece();
                     }
                 }
             }
 
+            // 活动方块轻微呼吸（不改朝向，只做视觉提示）
             if (piece && piece.mesh) {
                 const t = performance.now() * 0.004;
                 piece.mesh.scale.setScalar(1 + Math.sin(t) * 0.012);
@@ -1406,6 +1776,7 @@
 
         /* ---------------- 窗口尺寸变化 ---------------- */
 
+        // 记录上次的屏幕方向，用于判断横竖屏切换
         let lastIsPortrait = window.innerWidth < window.innerHeight;
         window.addEventListener('resize', () => {
             camera.aspect = window.innerWidth / window.innerHeight;
@@ -1415,8 +1786,10 @@
             const nowIsPortrait = window.innerWidth < window.innerHeight;
             if (nowIsPortrait !== lastIsPortrait) {
                 lastIsPortrait = nowIsPortrait;
+                // 横竖屏切换：重新计算相机距离和取景
                 resetCamera();
             } else {
+                // 普通窗口缩放：只刷新 view offset 和拖动条，保留用户拖动位置
                 refreshLayout();
             }
         });
@@ -1425,6 +1798,7 @@
 
         board = createBoard();
         updateHud();
+        // 初始预览：先确定下一块，避免开局空白
         nextKey = pickNextKey();
         drawNextPreview();
 

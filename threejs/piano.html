@@ -77,6 +77,31 @@
   #fsBtn:active { transform: scale(.94); background: rgba(40, 70, 120, .82); }
   #fsBtn.hidden { display: none; }
 
+  /* ---------- 延音踏板按钮 ---------- */
+  #pedalBtn {
+    position: fixed; right: 16px; bottom: 20px; z-index: 30;
+    padding: 11px 20px; border-radius: 999px;
+    font-family: inherit;
+    font-size: 13px; font-weight: 700; letter-spacing: .8px;
+    color: #b9cfe8;
+    background: rgba(24, 34, 50, .78);
+    border: 1px solid rgba(120, 160, 210, .26);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    box-shadow: 0 6px 24px rgba(0,0,0,.5);
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    transition: all .18s ease;
+  }
+  #pedalBtn.on {
+    color: #06121f;
+    background: linear-gradient(135deg, #8fdcff, #4d8fff);
+    border-color: rgba(170, 225, 255, .8);
+    box-shadow: 0 4px 22px rgba(80, 170, 255, .55),
+                inset 0 1px 0 rgba(255,255,255,.5);
+  }
+  #pedalBtn:active { transform: scale(.94); }
+
   /* ---------- 请旋转手机提示 ---------- */
   #rotateHint {
     position: fixed; inset: 0; z-index: 40;
@@ -114,6 +139,7 @@
     .hud p { font-size: 10px; line-height: 1.6; }
     .hud p:nth-of-type(n+3) { display: none; }
     #fsBtn { right: 10px; top: 10px; padding: 7px 12px; font-size: 12px; }
+    #pedalBtn { right: 10px; bottom: 12px; padding: 9px 15px; font-size: 12px; }
     #note { font-size: 30px; bottom: 18px; }
     #velbar { bottom: 62px; width: 120px; }
   }
@@ -126,6 +152,8 @@
 <button id="fsBtn">
   <span id="fsIcon">⤢</span><span id="fsText">横屏</span>
 </button>
+
+<button id="pedalBtn" class="on">延音 ON</button>
 
 <div id="rotateHint">
   <div class="rh-icon">📱</div>
@@ -145,8 +173,11 @@
     &nbsp;·&nbsp;
     <kbd>2</kbd><kbd>3</kbd><kbd>5</kbd><kbd>6</kbd><kbd>7</kbd>
   </p>
-  <p>移调八度 <kbd>[</kbd> <kbd>]</kbd> &nbsp;·&nbsp; 当前：<span id="octLabel">C4 – B5</span></p>
-  <p>手机上点右上角「横屏」· 鼠标点击琴键（靠前力度大）· 拖拽旋转 · 滚轮缩放</p>
+  <p>
+    移调 <kbd>[</kbd> <kbd>]</kbd> &nbsp;·&nbsp; 踏板 <kbd>空格</kbd>
+    &nbsp;·&nbsp; 当前：<span id="octLabel">C4 – B5</span>
+  </p>
+  <p>鼠标点击琴键（靠前力度大）· 按住滑动连奏 · 拖拽旋转 · 滚轮缩放</p>
 </div>
 
 <div id="note"></div>
@@ -260,7 +291,6 @@ const BLACK_TOP  = BLACK_BASE + BLACK_H;
 
 const PRESS_ANGLE = 0.092;
 
-// 白键序号
 const whiteIndexByMidi = new Map();
 {
   let i = 0;
@@ -268,8 +298,8 @@ const whiteIndexByMidi = new Map();
     if (!isBlackMidi(m)) { whiteIndexByMidi.set(m, i); i++; }
   }
 }
-const WHITE_COUNT = whiteIndexByMidi.size;      // 52
-const TOTAL_W     = WHITE_COUNT * WHITE_W;      // ≈28.6
+const WHITE_COUNT = whiteIndexByMidi.size;
+const TOTAL_W     = WHITE_COUNT * WHITE_W;
 const START_X     = -(WHITE_COUNT - 1) / 2 * WHITE_W;
 
 /* =========================================================
@@ -355,7 +385,8 @@ function createKey(midi, x, black) {
     pressed: false,
     angle: 0,
     angVel: 0,
-    pressDepth: 1
+    pressDepth: 1,
+    voice: null          // 当前发声的 voice
   };
 
   mesh.userData.key = key;
@@ -399,23 +430,37 @@ function fitCameraToKeyboard() {
 fitCameraToKeyboard();
 
 /* =========================================================
-   7. 音频引擎
+   7. 音频引擎（长延音 + 延音踏板）
    ========================================================= */
 let audioCtx = null;
 let masterGain = null;
-let activeVoices = 0;
-const MAX_VOICES = 48;
+
+/** 正在发声的 voice 列表 */
+const activeVoicesList = [];
+const MAX_VOICES = 40;
+
+/** 延音踏板状态，默认开启 */
+let sustainPedal = true;
 
 const PARTIALS = [
   { r: 1,  g: 1.00, d: 1.00 },
-  { r: 2,  g: 0.46, d: 0.66 },
-  { r: 3,  g: 0.24, d: 0.47 },
-  { r: 4,  g: 0.14, d: 0.34 },
-  { r: 5,  g: 0.085, d: 0.26 },
-  { r: 6,  g: 0.055, d: 0.20 },
-  { r: 8,  g: 0.030, d: 0.15 },
-  { r: 11, g: 0.016, d: 0.11 }
+  { r: 2,  g: 0.46, d: 0.72 },
+  { r: 3,  g: 0.24, d: 0.54 },
+  { r: 4,  g: 0.14, d: 0.40 },
+  { r: 5,  g: 0.085, d: 0.31 },
+  { r: 6,  g: 0.055, d: 0.24 },
+  { r: 8,  g: 0.030, d: 0.18 },
+  { r: 11, g: 0.016, d: 0.13 }
 ];
+
+/**
+ * 自然延音时长（秒）：从峰值指数衰减到 -80dB 所需时间
+ * A0 ≈ 20s，C4 ≈ 7.6s，C8 ≈ 2.3s
+ */
+function getSustainDuration(midi) {
+  const t = 20 * Math.pow(0.5, (midi - MIDI_LOW) / 28);
+  return clamp(t, 1.4, 22);
+}
 
 function makeImpulseResponse(seconds, decay) {
   const rate = audioCtx.sampleRate;
@@ -439,16 +484,16 @@ function ensureAudio() {
     compressor.knee.value = 26;
     compressor.ratio.value = 5;
     compressor.attack.value = 0.003;
-    compressor.release.value = 0.28;
+    compressor.release.value = 0.30;
     compressor.connect(audioCtx.destination);
 
     masterGain = audioCtx.createGain();
-    masterGain.gain.value = 0.92;
+    masterGain.gain.value = 0.85;
 
     const convolver = audioCtx.createConvolver();
-    convolver.buffer = makeImpulseResponse(2.0, 2.3);
+    convolver.buffer = makeImpulseResponse(2.2, 2.2);
     const wet = audioCtx.createGain();
-    wet.gain.value = 0.26;
+    wet.gain.value = 0.30;
 
     masterGain.connect(compressor);
     masterGain.connect(convolver);
@@ -458,17 +503,26 @@ function ensureAudio() {
   if (audioCtx.state === 'suspended') audioCtx.resume();
 }
 
+/**
+ * 播放一个音符，返回 voice 对象。
+ * 声音在创建时就带有很长的自然衰减包络，松键后是否继续由踏板决定。
+ */
 function playNote(midi, velocity = 0.85) {
   ensureAudio();
-  if (activeVoices >= MAX_VOICES) return;
+
+  // 声部数超限：快速释放最老的一个
+  if (activeVoicesList.length >= MAX_VOICES) {
+    const oldest = activeVoicesList.shift();
+    fastReleaseVoice(oldest);
+  }
 
   const ctx = audioCtx;
   const t = ctx.currentTime + 0.001;
 
   const v = clamp(velocity, 0.15, 1);
   const freq = 440 * Math.pow(2, (midi - 69) / 12);
+  const sustainDur = getSustainDuration(midi);
 
-  const baseDur = 4.8 * Math.pow(0.5, (midi - MIDI_LOW) / 26);
   const amp       = 0.045 + 0.175 * v;
   const bright    = 0.25 + 0.75 * v;
   const attackMul = 1.35 - 0.85 * v;
@@ -476,6 +530,15 @@ function playNote(midi, velocity = 0.85) {
   const bus = ctx.createGain();
   bus.gain.value = amp;
   bus.connect(masterGain);
+
+  const voice = {
+    midi,
+    bus,
+    oscs: [],
+    released: false,
+    stopped: false,
+    cleanupTimer: null
+  };
 
   const maxRatio = midi > 96 ? 4 : midi > 84 ? 6 : 11;
 
@@ -488,28 +551,72 @@ function playNote(midi, velocity = 0.85) {
     osc.detune.value = (Math.random() - 0.5) * 5.5;
 
     const g = ctx.createGain();
-    const dur    = Math.max(0.09, baseDur * p.d);
+    const dur    = Math.max(0.35, sustainDur * p.d);
     const attack = (0.0035 + 0.011 / p.r) * attackMul;
     const peak   = p.g * (p.r === 1 ? 1 : bright);
 
+    // attack → 长自然衰减（指数曲线，符合钢琴弦振动）
     g.gain.setValueAtTime(0.0001, t);
     g.gain.exponentialRampToValueAtTime(Math.max(0.0004, peak), t + attack);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + attack + dur);
 
     osc.connect(g);
     g.connect(bus);
 
     osc.start(t);
-    osc.stop(t + dur + 0.06);
+    osc.stop(t + attack + dur + 0.1);
+
+    voice.oscs.push(osc);
   }
 
-  activeVoices++;
-  setTimeout(() => { activeVoices = Math.max(0, activeVoices - 1); },
-             Math.min(5000, (baseDur + 0.5) * 1000));
+  activeVoicesList.push(voice);
+
+  // 自然结束后自动清理
+  voice.cleanupTimer = setTimeout(() => {
+    if (!voice.stopped) {
+      voice.stopped = true;
+      const idx = activeVoicesList.indexOf(voice);
+      if (idx >= 0) activeVoicesList.splice(idx, 1);
+    }
+  }, (sustainDur + 0.8) * 1000);
+
+  return voice;
+}
+
+/**
+ * 快速制音：约 0.16s 内把 voice 的音量拉到 0 并停止振荡器。
+ * 对应踏板抬起或琴键松开（踏板关）时制音器落下的效果。
+ */
+function fastReleaseVoice(voice) {
+  if (!voice || voice.stopped) return;
+  voice.stopped = true;
+
+  clearTimeout(voice.cleanupTimer);
+
+  const ctx = audioCtx;
+  if (ctx) {
+    const now = ctx.currentTime;
+    const release = 0.16;
+
+    try {
+      voice.bus.gain.cancelScheduledValues(now);
+      // setTargetAtTime 从当前值指数逼近 0，无需读取当前值
+      voice.bus.gain.setTargetAtTime(0, now, release / 3);
+    } catch (e) { /* 忽略 */ }
+
+    for (const osc of voice.oscs) {
+      try { osc.stop(now + release + 0.05); } catch (e) { /* 已停止 */ }
+    }
+  }
+
+  setTimeout(() => {
+    const idx = activeVoicesList.indexOf(voice);
+    if (idx >= 0) activeVoicesList.splice(idx, 1);
+  }, 280);
 }
 
 /* =========================================================
-   8. 按下 / 松开
+   8. 按下 / 松开（结合踏板）
    ========================================================= */
 const noteEl  = document.getElementById('note');
 const velBar  = document.getElementById('velbar');
@@ -532,17 +639,66 @@ function pressKey(key, velocity = 0.85) {
   if (!key || key.pressed) return;
   key.pressed = true;
   key.pressDepth = 0.82 + 0.28 * velocity;
-  playNote(key.midi, velocity);
+
+  // 同一个键之前的声音若还在响（踏板开着），先快速淡出避免叠加
+  if (key.voice && !key.voice.stopped) {
+    fastReleaseVoice(key.voice);
+  }
+
+  key.voice = playNote(key.midi, velocity);
   flashNote(key.name, velocity);
 }
 
 function releaseKey(key) {
   if (!key) return;
   key.pressed = false;
+
+  const voice = key.voice;
+  if (!voice || voice.stopped) return;
+
+  if (sustainPedal) {
+    // 踏板开启：制音器不落下，让弦自然衰减继续
+    voice.released = true;
+  } else {
+    // 踏板关闭：制音器立即落下
+    fastReleaseVoice(voice);
+    key.voice = null;
+  }
 }
 
 /* =========================================================
-   9. 鼠标 / 触摸：拾取 + 力度 + 滑动连奏
+   9. 延音踏板 UI 与逻辑
+   ========================================================= */
+const pedalBtn = document.getElementById('pedalBtn');
+
+function setSustainPedal(on) {
+  sustainPedal = on;
+  pedalBtn.classList.toggle('on', on);
+  pedalBtn.textContent = on ? '延音 ON' : '延音 OFF';
+
+  if (!on) {
+    // 踏板抬起：所有已松键但仍在响的音，制音器落下
+    for (const v of [...activeVoicesList]) {
+      if (v.released && !v.stopped) fastReleaseVoice(v);
+    }
+  }
+}
+
+pedalBtn.addEventListener('click', () => {
+  setSustainPedal(!sustainPedal);
+  pedalBtn.blur();
+});
+
+// 空格键切换踏板（捕获阶段，确保优先处理并阻止按钮默认激活）
+window.addEventListener('keydown', (e) => {
+  if (e.code === 'Space') {
+    e.preventDefault();
+    if (!e.repeat) setSustainPedal(!sustainPedal);
+  }
+}, true);
+
+/* =========================================================
+   10. 鼠标 / 触摸：拾取 + 力度 + 滑动连奏
    ========================================================= */
 const raycaster = new THREE.Raycaster();
 const ndc = new THREE.Vector2();
@@ -568,7 +724,7 @@ let pointerKey = null;
 let pointerPlaying = false;
 
 canvas.addEventListener('pointerdown', (e) => {
-  if (pointerPlaying) return;          // 多指触摸时让 OrbitControls 处理
+  if (pointerPlaying) return;
 
   const hit = pickKey(e.clientX, e.clientY);
   if (!hit) return;
@@ -602,7 +758,7 @@ window.addEventListener('pointerup', endPointer);
 window.addEventListener('pointercancel', endPointer);
 
 /* =========================================================
-   10. 电脑键盘映射（可移调）
+   11. 电脑键盘映射（可移调）
    ========================================================= */
 const BASE_KEY_MAP = {
   'z': 60, 's': 61, 'x': 62, 'd': 63, 'c': 64, 'v': 65, 'g': 66,
@@ -656,7 +812,7 @@ window.addEventListener('blur', () => {
 });
 
 /* =========================================================
-   11. 一键横屏
+   12. 一键横屏
    ========================================================= */
 const fsBtn      = document.getElementById('fsBtn');
 const fsIcon     = document.getElementById('fsIcon');
@@ -666,9 +822,8 @@ const rotateHint = document.getElementById('rotateHint');
 const isTouchDevice =
   ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
 
-let landscapeMode = false;   // 是否处于「横屏模式」
+let landscapeMode = false;
 
-// 桌面端隐藏按钮
 if (!isTouchDevice) fsBtn.classList.add('hidden');
 
 const isLandscape = () => window.innerWidth > window.innerHeight;
@@ -695,7 +850,6 @@ function hideRotateHint() {
 }
 rotateHint.addEventListener('pointerdown', hideRotateHint);
 
-/** 全屏 + 方向锁定，然后重新适配相机 */
 function refitCameraAfterRotate(delay = 280) {
   setTimeout(() => {
     camera.aspect = window.innerWidth / window.innerHeight;
@@ -710,7 +864,6 @@ function refitCameraAfterRotate(delay = 280) {
 async function enterLandscape() {
   const el = document.documentElement;
 
-  // 1) 进入全屏（iOS iPhone Safari 不支持，会抛错，忽略即可）
   try {
     if (el.requestFullscreen) {
       await el.requestFullscreen({ navigationUI: 'hide' });
@@ -719,7 +872,6 @@ async function enterLandscape() {
     }
   } catch (err) { /* 忽略 */ }
 
-  // 2) 锁定横屏方向
   let locked = false;
   try {
     if (screen.orientation && typeof screen.orientation.lock === 'function') {
@@ -735,7 +887,6 @@ async function enterLandscape() {
   updateFsBtn();
   refitCameraAfterRotate();
 
-  // 3) 锁定失败且当前仍是竖屏 → 提示用户手动旋转
   if (!locked && !isLandscape()) showRotateHint();
 }
 
@@ -767,7 +918,6 @@ fsBtn.addEventListener('click', () => {
   else enterLandscape();
 });
 
-// 用户用系统手势 / Esc 退出全屏时同步状态
 function syncFullscreenState() {
   const fsEl = document.fullscreenElement || document.webkitFullscreenElement;
   if (!fsEl && landscapeMode) {
@@ -781,7 +931,6 @@ function syncFullscreenState() {
 document.addEventListener('fullscreenchange', syncFullscreenState);
 document.addEventListener('webkitfullscreenchange', syncFullscreenState);
 
-// 设备方向变化时：横过来了就收起提示
 if (screen.orientation && screen.orientation.addEventListener) {
   screen.orientation.addEventListener('change', () => {
     if (isLandscape()) hideRotateHint();
@@ -796,7 +945,7 @@ window.addEventListener('orientationchange', () => {
 });
 
 /* =========================================================
-   12. 动画循环（重锤弹簧物理）
+   13. 动画循环（重锤弹簧物理）
    ========================================================= */
 const clock = new THREE.Clock();
 const SUBSTEPS = 4;
@@ -844,7 +993,7 @@ if (loadingEl) {
 animate();
 
 /* =========================================================
-   13. 窗口尺寸变化
+   14. 窗口尺寸变化
    ========================================================= */
 let resizeTimer = null;
 window.addEventListener('resize', () => {

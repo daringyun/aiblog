@@ -1683,4 +1683,339 @@
         function clearAll() {
             currentMeshes.forEach(mesh => {
                 scene.remove(mesh);
-                if (mesh.geometry) mesh.geometry.dispose
+                if (mesh.geometry) mesh.geometry.dispose();
+                if (mesh.material) {
+                    if (Array.isArray(mesh.material)) mesh.material.forEach(m => m.dispose());
+                    else mesh.material.dispose();
+                }
+            });
+            currentMeshes = [];
+        }
+
+        /**
+         * 主绘制流程（支持多函数逗号分隔叠加）：
+         *   1. 按顶层逗号分割成多个函数
+         *   2. 逐个绘制，每个用调色板中不同颜色
+         *   3. 汇总状态栏
+         *
+         * 用 setTimeout(20) 让"计算中..."先渲染出来，避免长任务卡 UI
+         */
+        function draw() {
+            const type = document.getElementById('funcType').value;
+            const formulaInput = document.getElementById('formula').value.trim();
+            const range = parseFloat(document.getElementById('rangeInput').value) || 5;
+            const res = parseInt(document.getElementById('resInput').value) || 150;
+            if (!formulaInput) { setStatus('请输入公式', 'err'); return; }
+
+            // 按顶层逗号分割（忽略括号内的逗号）
+            const formulas = splitByTopLevelComma(formulaInput);
+            if (formulas.length === 0) { setStatus('请输入公式', 'err'); return; }
+
+            rebuildAxes(range);
+            setStatus('计算中...', '');
+            // 重置诊断变量
+            window.__lastDiag = null;
+            window.__lastDiagBase = null;
+            window.__last3DDiag = null;
+            window.__lastConverted = null;
+            window.__funcDeclNotice = null;
+            window.__lastCurveYRange = null;   // 新增：清空曲线 y 范围记录
+            clearAll();
+
+            // 异步执行重计算，让状态栏先重绘
+            setTimeout(() => {
+                const results = [];    // { formula, ok, color }
+                const meshes = [];
+                const isMulti = formulas.length > 1;
+
+                // 逐个绘制
+                for (let idx = 0; idx < formulas.length; idx++) {
+                    const formula = formulas[idx];
+                    const color = COLOR_PALETTE[idx % COLOR_PALETTE.length];
+                    let mesh = null;
+                    try {
+                        if (type === 'surface') {
+                            // 多函数用纯色，单函数保留顶点色美观
+                            mesh = drawSurface(formula, range, 60, isMulti ? color : null);
+                        } else if (type === 'implicit3d') {
+                            mesh = drawImplicit3D(formula, range, 48, isMulti ? color : null);
+                        } else if (type === 'implicit') {
+                            mesh = drawImplicit(formula, range, res, color);
+                        } else if (type === 'plane') {
+                            // 本次修改：采样点 400→1000，曲线更平滑、更忠实于 f(x)
+                            mesh = drawPlaneCurve(formula, range, 1000, color);
+                        }
+                    } catch (e) {
+                        console.error(`函数 ${idx+1} 绘制出错:`, e);
+                        results.push({ formula, ok: false, color });
+                        continue;
+                    }
+                    if (mesh) {
+                        scene.add(mesh);
+                        meshes.push(mesh);
+                        results.push({ formula, ok: true, color });
+                    } else {
+                        results.push({ formula, ok: false, color });
+                    }
+                }
+                currentMeshes = meshes;
+
+                // 状态栏汇总
+                const okCount = results.filter(r => r.ok).length;
+                const total = results.length;
+                const converted = window.__lastConverted || '';
+                const notice = window.__funcDeclNotice || '';
+
+                if (okCount === 0) {
+                    // 全部失败
+                    let msg = `❌ 所有 ${total} 个函数均无法绘制\n\n`;
+                    results.forEach((r, i) => {
+                        msg += `  [${i+1}] ${r.formula}\n`;
+                    });
+                    const diag = window.__lastDiag;
+                    const diag3d = window.__last3DDiag;
+                    if (type === 'implicit3d' && diag3d) {
+                        msg += `\n采样点: 负=${diag3d.negCount}, 正=${diag3d.posCount}\n建议: 增大范围 或 提高分辨率`;
+                    } else if (diag && diag.fatal) {
+                        msg += `\n诊断: 有效采样点为 0（表达式可能有未定义变量，或全部超出定义域）`;
+                    } else if (diag && diag.noZero) {
+                        msg += `\n诊断: 范围内无零点，|F| 最小 = ${diag.minAbsF.toFixed(5)}`;
+                    }
+                    if (converted) msg += `\n\n最后一次转换: ${converted}`;
+                    setStatus(msg, 'err');
+                } else if (okCount === total && total === 1) {
+                    // ===== 单函数成功 =====
+                    const diag = window.__lastDiag;
+                    const curveYR = window.__lastCurveYRange;   // 新增：取曲线 y 范围
+                    let extraHint = '';
+
+                    // ① 显式曲线：y 远超坐标视野时给出提示
+                    if (type === 'plane' && curveYR) {
+                        const maxAbsY = Math.max(Math.abs(curveYR.yMin), Math.abs(curveYR.yMax));
+                        if (maxAbsY > curveYR.range * 2) {
+                            extraHint += `\n⚠️ 曲线 y 范围约 [${curveYR.yMin.toFixed(2)}, ${curveYR.yMax.toFixed(2)}]，` +
+                                         `远超坐标范围 ±${curveYR.range}。\n` +
+                                         `当前视野可能只显示曲线的一小段。\n` +
+                                         `可滚轮拉远查看完整曲线，或减小范围查看局部。`;
+                        }
+                    }
+
+                    // ② 隐函数：公式不含 y 时提示
+                    if (type === 'implicit' && !/\by\b/.test(formulas[0])) {
+                        extraHint += `\nℹ️ 公式不含 y，等值线为竖直方向（方程 x 的解）。\n` +
+                                     `如果想画 y=f(x) 的函数图像，请切换到「显式曲线」模式。`;
+                    }
+
+                    if (diag && diag.fuzzyMode) {
+                        setStatus(
+                            `✓ 绘制完成 (近似模式)\n` +
+                            `⚠️ 无严格零点 (离散解集)，已画 |F| = ${diag.threshold.toFixed(4)} 的等值线\n` +
+                            (notice ? `ℹ️ ${notice}\n` : '') +
+                            `转换后: ${converted}${extraHint}`,
+                            'ok'
+                        );
+                    } else {
+                        setStatus(`✓ 绘制完成${notice ? '\nℹ️ ' + notice : ''}\n转换后: ${converted}${extraHint}`, 'ok');
+                    }
+                } else {
+                    // 多函数：显示每个的成功/失败
+                    let msg = `✓ 绘制完成 ${okCount}/${total} 个函数\n`;
+                    results.forEach((r, i) => {
+                        const mark = r.ok ? '✓' : '✗';
+                        // 输出该函数在场景中的实际颜色（#RRGGBB），方便用户对照哪条线/面是哪个函数
+                        const colorHex = '#' + r.color.toString(16).padStart(6, '0');
+                        msg += `  ${mark} [${colorHex}] ${r.formula}\n`;
+                    });
+                    if (notice) msg += `ℹ️ ${notice}`;
+                    setStatus(msg.trim(), okCount === total ? 'ok' : 'warn');
+                }
+            }, 20);
+        }
+
+        // ==================== 样例选择 ====================
+        // 样例 value 格式 "类型:::公式"，选择后自动填充并触发绘制
+        document.getElementById('sampleSelect').addEventListener('change', (e) => {
+            const val = e.target.value;
+            if (!val) return;
+            // 用 ::: 分隔，公式里可能含冒号所以不用 split 的全部，只取第一段作类型
+            const [type, ...formulaParts] = val.split(':::');
+            const formula = formulaParts.join(':::');
+            document.getElementById('funcType').value = type;
+            document.getElementById('formula').value = formula;
+            // 不同类型给不同的默认范围/分辨率
+            const rangeInput = document.getElementById('rangeInput');
+            const resInput = document.getElementById('resInput');
+            if (type === 'implicit3d') { rangeInput.value = 2.5; resInput.value = 48; }
+            else if (type === 'surface') { rangeInput.value = 4; resInput.value = 60; }
+            else if (type === 'implicit') { rangeInput.value = 6; resInput.value = 250; }
+            else if (type === 'plane') { rangeInput.value = 6; resInput.value = 400; }
+            // 含 tan 的隐函数有奇点，缩小范围避免发散
+            if (formula.includes('tan') && type === 'implicit') { rangeInput.value = 4; resInput.value = 250; }
+            draw();
+        });
+
+        // ==================== 范围变化立即重建坐标轴 ====================
+        // 范围输入失焦时即时刷新坐标轴，无需等点击绘制
+        document.getElementById('rangeInput').addEventListener('change', (e) => {
+            const r = parseFloat(e.target.value) || 6;
+            rebuildAxes(r);
+        });
+
+        // ==================== 帮助面板折叠 ====================
+        const helpPanel = document.getElementById('helpPanel');
+        document.getElementById('helpHeader').addEventListener('click', () => {
+            helpPanel.classList.toggle('expanded');
+        });
+
+        // ==================== 控制面板折叠 ====================
+        const controlPanel = document.getElementById('controlPanel');
+        const collapseBtn = document.getElementById('collapseBtn');
+        collapseBtn.addEventListener('click', (e) => {
+            e.stopPropagation();   // 阻止冒泡到标题栏的拖动逻辑
+            controlPanel.classList.toggle('collapsed');
+            // 折叠时 CSS 的 .collapsed 规则用 !important 强制 width/height:auto，
+            // 覆盖了由 CSS 变量 --panel-width / --panel-height 控制的尺寸，
+            // 所以无论用户之前拖多大，折叠时背景框都会收缩到标题栏大小。
+            collapseBtn.textContent = controlPanel.classList.contains('collapsed') ? '展开' : '折叠';
+        });
+
+        // ==================== 面板拖动/调整（鼠标 + 触摸） ====================
+        // 拖动标题栏移动整个控制面板；拖动右下角手柄调整面板宽高
+        // 同时支持鼠标 (mousedown/mousemove/mouseup) 和触摸 (touchstart/touchmove/touchend)
+        // 触摸事件注意：
+        //   - 必须给被拖动元素设置 touch-action: none（在 CSS 里）
+        //   - touchmove 必须 passive: false 才能 preventDefault 阻止页面滚动
+        //   - 监听 touchcancel 防止来电等打断后卡在拖动状态
+        const panel = document.getElementById('controlPanel');
+        const header = document.getElementById('panelHeader');
+        const resizeHandle = document.getElementById('resizeHandle');
+
+        // ---------- 拖动 ----------
+        let isDragging = false, dragStartX = 0, dragStartY = 0, panelStartX = 0, panelStartY = 0;
+
+        /** 开始拖动（鼠标/触摸共用） */
+        function startDrag(clientX, clientY) {
+            isDragging = true;
+            dragStartX = clientX; dragStartY = clientY;
+            const rect = panel.getBoundingClientRect();
+            panelStartX = rect.left; panelStartY = rect.top;
+        }
+        /** 拖动中：限制在视口内移动 */
+        function moveDrag(clientX, clientY) {
+            if (!isDragging) return;
+            const dx = clientX - dragStartX, dy = clientY - dragStartY;
+            panel.style.left = Math.max(0, Math.min(window.innerWidth - panel.offsetWidth, panelStartX + dx)) + 'px';
+            panel.style.top = Math.max(0, Math.min(window.innerHeight - 60, panelStartY + dy)) + 'px';
+        }
+        /** 结束拖动 */
+        function endDrag() { isDragging = false; }
+
+        // 鼠标：按下标题栏开始拖（排除按钮/输入框等子元素）
+        header.addEventListener('mousedown', (e) => {
+            if (['BUTTON','SELECT','INPUT','TEXTAREA'].includes(e.target.tagName)) return;
+            startDrag(e.clientX, e.clientY);
+            e.preventDefault();
+        });
+        window.addEventListener('mousemove', (e) => moveDrag(e.clientX, e.clientY));
+        window.addEventListener('mouseup', endDrag);
+
+        // 触摸：按下标题栏开始拖（按钮/输入框不触发拖动）
+        header.addEventListener('touchstart', (e) => {
+            if (['BUTTON','SELECT','INPUT','TEXTAREA'].includes(e.target.tagName)) return;
+            const touch = e.touches[0];
+            startDrag(touch.clientX, touch.clientY);
+        }, { passive: true });
+        window.addEventListener('touchmove', (e) => {
+            if (!isDragging) return;
+            const touch = e.touches[0];
+            moveDrag(touch.clientX, touch.clientY);
+            e.preventDefault(); // 阻止页面滚动
+        }, { passive: false });
+        window.addEventListener('touchend', endDrag);
+        window.addEventListener('touchcancel', endDrag);
+
+        // ---------- 调整大小 ----------
+        let isResizing = false, resizeStartX = 0, resizeStartY = 0, startWidth = 0, startHeight = 0;
+
+        /** 开始调整大小 */
+        function startResize(clientX, clientY) {
+            isResizing = true;
+            resizeStartX = clientX; resizeStartY = clientY;
+            const rect = panel.getBoundingClientRect();
+            startWidth = rect.width; startHeight = rect.height;
+        }
+        /**
+         * 调整大小中：最小 400×400
+         * 关键修复：不写内联 style.width/height，而是写 CSS 自定义属性 --panel-width/--panel-height。
+         * 这样折叠时 .collapsed 的 width:auto !important 可以正常覆盖，不会被内联样式锁死。
+         */
+        function moveResize(clientX, clientY) {
+            if (!isResizing) return;
+            const newW = Math.max(400, startWidth + clientX - resizeStartX);
+            const newH = Math.max(400, startHeight + clientY - resizeStartY);
+            panel.style.setProperty('--panel-width', newW + 'px');
+            panel.style.setProperty('--panel-height', newH + 'px');
+        }
+        /** 结束调整 */
+        function endResize() { isResizing = false; }
+
+        // 鼠标
+        resizeHandle.addEventListener('mousedown', (e) => {
+            startResize(e.clientX, e.clientY);
+            e.preventDefault(); e.stopPropagation();
+        });
+        window.addEventListener('mousemove', (e) => moveResize(e.clientX, e.clientY));
+        window.addEventListener('mouseup', endResize);
+
+        // 触摸
+        resizeHandle.addEventListener('touchstart', (e) => {
+            const touch = e.touches[0];
+            startResize(touch.clientX, touch.clientY);
+            e.stopPropagation();
+        }, { passive: true });
+        window.addEventListener('touchmove', (e) => {
+            if (!isResizing) return;
+            const touch = e.touches[0];
+            moveResize(touch.clientX, touch.clientY);
+            e.preventDefault();
+        }, { passive: false });
+        window.addEventListener('touchend', endResize);
+        window.addEventListener('touchcancel', endResize);
+
+        // 面板内禁止文本选择（输入框和状态栏除外），避免拖动时选中文字
+        panel.addEventListener('selectstart', (e) => {
+            if (['INPUT','TEXTAREA'].includes(e.target.tagName)) return;
+            if (e.target.closest('#status')) return;   // 状态栏允许选择复制
+            e.preventDefault();
+        });
+
+        // ==================== 事件绑定 ====================
+        // 绘制按钮点击
+        document.getElementById('drawBtn').addEventListener('click', draw);
+        // 公式框 Ctrl/Cmd + Enter 快捷绘制
+        document.getElementById('formula').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); draw(); }
+        });
+        // 窗口尺寸变化：同步更新相机宽高比与渲染器尺寸
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            labelRenderer.setSize(window.innerWidth, window.innerHeight);
+        });
+        // 页面加载完成后自动绘制一次初始公式
+        window.addEventListener('load', () => setTimeout(draw, 100));
+
+        // ==================== 渲染循环 ====================
+        // requestAnimationFrame 持续渲染：OrbitControls 阻尼更新 + WebGL 渲染 + CSS2D 标签渲染
+        (function animate() {
+            requestAnimationFrame(animate);
+            controls.update();                  // 阻尼惯性更新
+            renderer.render(scene, camera);     // 3D 场景
+            labelRenderer.render(scene, camera); // HTML 标签
+        })();
+
+        console.log('✅ 加载完成。显式曲线已改用 Line 直连采样点，消除 Catmull-Rom 过冲。');
+    </script>
+</body>
+</html>

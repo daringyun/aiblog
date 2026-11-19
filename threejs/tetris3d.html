@@ -291,23 +291,87 @@
         <button id="startBtn">开始游戏</button>
     </div>
 
-    <!-- importmap：把 bare specifier "three" 映射到 CDN 的 ES Module URL -->
-    <script type="importmap">
-        {
-            "imports": {
-                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+    <!-- 加载失败提示层（Three.js 全部 CDN 加载失败时显示） -->
+    <div id="loadFail" style="display:none; position:fixed; inset:0; z-index:999;
+        background:#0b0f1a; color:#cfd8e6; font:14px/1.8 'Consolas',monospace;
+        padding:40px; text-align:center;">
+        <div style="font-size:20px; color:#ff7a7a; margin-bottom:12px;">Three.js 加载失败</div>
+        <div id="loadFailTips">
+            所有 CDN 均无法加载。<br>
+            请确认页面以 <b>http://localhost</b> 打开（不能直接双击 HTML），<br>
+            或将 three.min.js 下载到本地后改为 <b>./three.min.js</b>。
+        </div>
+    </div>
+
+    <script>
+    /* =====================================================================
+       动态加载 Three.js（多 CDN 自动回退，与 piano.html 保持一致）
+       ---------------------------------------------------------------------
+       1. 不使用 ES module / importmap，改用 UMD 全局脚本。
+          原因：file:// 协议下 ES module 会被 CORS 拦截，importmap 也可能解析失败。
+          UMD 版本用普通 <script> 加载，兼容性最好。
+       2. addons（OrbitControls）UMD 构建在 r148 起被移除（examples/js 目录删除），
+          因此统一使用 three@0.147.0 —— 官方最后一个同时提供
+          build/three.min.js 与 examples/js/*.js 的版本。
+       3. 依次尝试 jsDelivr → Zstatic → unpkg，任一成功即启动。
+       4. 全部失败时给出可操作的排查提示，而非静默卡住。
+       ===================================================================== */
+    (function loadThree() {
+        var CDN_BASES = [
+            "https://cdn.jsdelivr.net/npm/three@0.147.0",
+            "https://s4.zstatic.net/npm/three@0.147.0",
+            "https://unpkg.com/three@0.147.0"
+        ];
+        // 需要加载的脚本：核心 + OrbitControls addon（r147 UMD 版，挂到 THREE 上）
+        var SCRIPTS = ["/build/three.min.js", "/examples/js/controls/OrbitControls.js"];
+        var baseIdx = 0, scriptIdx = 0;
+
+        function tryNext() {
+            // 所有 CDN 都失败
+            if (baseIdx >= CDN_BASES.length) {
+                var fail = document.getElementById('loadFail');
+                if (fail) fail.style.display = 'block';
+                return;
             }
+            var s = document.createElement('script');
+            s.src = CDN_BASES[baseIdx] + SCRIPTS[scriptIdx++];
+            s.onload = function () {
+                if (scriptIdx < SCRIPTS.length) {
+                    // 核心已加载，继续加载 addon（同一 CDN，保持版本一致）
+                    tryNext();
+                } else if (typeof THREE !== 'undefined' && THREE.OrbitControls) {
+                    // Three.js + addons 已就绪，启动主程序
+                    try { startTetris(); }
+                    catch (err) {
+                        // 初始化异常显示在加载层，便于排查
+                        var fail = document.getElementById('loadFail');
+                        var tips = document.getElementById('loadFailTips');
+                        if (fail) fail.style.display = 'block';
+                        if (tips) tips.textContent = '初始化失败：' + err.message;
+                        console.error(err);
+                    }
+                } else {
+                    // 加载成功但内容异常，换下一个 CDN
+                    scriptIdx = 0; baseIdx++;
+                    tryNext();
+                }
+            };
+            s.onerror = function () {
+                // 当前 CDN 失败，换下一个（从头加载核心 + addon）
+                scriptIdx = 0; baseIdx++;
+                tryNext();
+            };
+            document.head.appendChild(s);
         }
+        tryNext();
+    })();
     </script>
 
-    <script type="module">
-        import * as THREE from 'three';
-        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-
+    <script>
         /* ================================================================
          *  一、游戏常量与棋盘数据结构
          * ================================================================ */
+        function startTetris() {
 
         const COLS = 16;            // 棋盘列数（比经典 10 列更宽）
         const ROWS = 24;            // 棋盘行数（比经典 20 行更高）
@@ -363,6 +427,12 @@
 
         const wrap = document.getElementById('canvasWrap');
 
+        /* r147 颜色管理补偿：
+         * r147 默认 ColorManagement.legacyMode = true（颜色不做 sRGB→Linear 转换），
+         * r160 默认开启转换。开启后 setHex/setHSL 的行为与 r160 一致，
+         * 配合上方 outputEncoding = sRGBEncoding，最终输出的颜色与原 r160 版本相同。 */
+        THREE.ColorManagement.legacyMode = false;
+
         // 场景：深紫黑背景 + 雾效（雾的 near/far 在 animate 里每帧动态调整，
         // 让棋盘永远在雾区之前，缩放时不会变暗）
         const scene = new THREE.Scene();
@@ -411,7 +481,11 @@
         // 移动端关阴影，省一次深度 pass
         renderer.shadowMap.enabled = !isMobileNow;
         renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-        renderer.outputColorSpace = THREE.SRGBColorSpace;
+        // r147 用 outputEncoding（r152 起才改名为 outputColorSpace）
+        renderer.outputEncoding = THREE.sRGBEncoding;
+        // r160 默认开启物理灯光（useLegacyLights=false），r147 需手动开启
+        // 否则点光/平行光强度会被乘以 π，画面偏亮
+        renderer.physicallyCorrectLights = true;
         // 关键：关掉 ACES tone mapping。ACES 会压高光、去饱和，
         // 导致方块颜色发白发灰。NoToneMapping 下 emissive = instanceColor 时
         // 输出就是纯 sRGB 色，和 NEXT 预览完全一致。
@@ -429,8 +503,9 @@
          * OrbitControls：左键/单指拖 = 旋转视角，滚轮 = 缩放。
          * 平移禁用（由拖动条负责），避免和旋转冲突。
          * target 恒为原点（= 棋盘几何中心），所以旋转永远绕棋盘中心。
+         * r147 的 UMD addons 挂在 THREE.OrbitControls（非 ESM import）。
          */
-        const controls = new OrbitControls(camera, renderer.domElement);
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
         controls.enableDamping = true;
         controls.dampingFactor = 0.08;
         controls.enableRotate = true;
@@ -1803,6 +1878,7 @@
         drawNextPreview();
 
         console.log('✅ 3D 俄罗斯方块已加载（炫彩方块 / 暗色玻璃背景）');
+        }
     </script>
 </body>
 </html>

@@ -400,20 +400,90 @@
         <div id="resizeHandle"></div>
     </div>
 
-    <!-- importmap：把 bare specifier "three" 映射到 CDN 的 ES Module URL -->
-    <script type="importmap">
-        {
-            "imports": {
-                "three": "https://unpkg.com/three@0.128.0/build/three.module.js",
-                "three/addons/": "https://unpkg.com/three@0.128.0/examples/jsm/"
+    <!-- 加载失败提示层（Three.js 全部 CDN 加载失败时显示） -->
+    <div id="loadFail" style="display:none; position:fixed; inset:0; z-index:999;
+        background:#0a0a12; color:#cfd8e6; font:14px/1.8 'Consolas',monospace;
+        padding:40px; text-align:center;">
+        <div style="font-size:20px; color:#ff6666; margin-bottom:12px;">Three.js 加载失败</div>
+        <div id="loadFailTips">
+            所有 CDN 均无法加载。<br>
+            请确认页面以 <b>http://localhost</b> 打开（不能直接双击 HTML），<br>
+            或将 three.min.js 下载到本地后改为 <b>./three.min.js</b>。
+        </div>
+    </div>
+
+    <script>
+    /* =====================================================================
+       动态加载 Three.js（多 CDN 自动回退，与 piano.html 保持一致）
+       ---------------------------------------------------------------------
+       1. 不使用 ES module / importmap，改用 UMD 全局脚本。
+          原因：file:// 协议下 ES module 会被 CORS 拦截，importmap 也可能解析失败。
+          UMD 版本用普通 <script> 加载，兼容性最好。
+       2. addons（OrbitControls / CSS2DRenderer）UMD 构建在 r148 起被移除
+          （examples/js 目录删除），因此统一使用 three@0.147.0 ——
+          官方最后一个同时提供 build/three.min.js 与 examples/js/*.js 的版本。
+       3. 依次尝试 jsDelivr → Zstatic → unpkg，任一成功即启动。
+       4. 全部失败时给出可操作的排查提示，而非静默卡住。
+       ===================================================================== */
+    (function loadThree() {
+        var CDN_BASES = [
+            "https://cdn.jsdelivr.net/npm/three@0.147.0",
+            "https://s4.zstatic.net/npm/three@0.147.0",
+            "https://unpkg.com/three@0.147.0"
+        ];
+        // 需要加载的脚本：核心 + OrbitControls + CSS2DRenderer（r147 UMD 版，挂到 THREE 上）
+        var SCRIPTS = [
+            "/build/three.min.js",
+            "/examples/js/controls/OrbitControls.js",
+            "/examples/js/renderers/CSS2DRenderer.js"
+        ];
+        var baseIdx = 0, scriptIdx = 0;
+
+        function tryNext() {
+            // 所有 CDN 都失败
+            if (baseIdx >= CDN_BASES.length) {
+                var fail = document.getElementById('loadFail');
+                if (fail) fail.style.display = 'block';
+                return;
             }
+            var s = document.createElement('script');
+            s.src = CDN_BASES[baseIdx] + SCRIPTS[scriptIdx++];
+            s.onload = function () {
+                if (scriptIdx < SCRIPTS.length) {
+                    // 上一个脚本已加载，继续加载下一个（同一 CDN，保持版本一致）
+                    tryNext();
+                } else if (typeof THREE !== 'undefined' && THREE.OrbitControls && THREE.CSS2DRenderer) {
+                    // Three.js + addons 已就绪，启动主程序
+                    try { startMathDraw(); }
+                    catch (err) {
+                        // 初始化异常显示在加载层，便于排查
+                        var fail = document.getElementById('loadFail');
+                        var tips = document.getElementById('loadFailTips');
+                        if (fail) fail.style.display = 'block';
+                        if (tips) tips.textContent = '初始化失败：' + err.message;
+                        console.error(err);
+                    }
+                } else {
+                    // 加载成功但内容异常，换下一个 CDN
+                    scriptIdx = 0; baseIdx++;
+                    tryNext();
+                }
+            };
+            s.onerror = function () {
+                // 当前 CDN 失败，换下一个（从头加载核心 + addons）
+                scriptIdx = 0; baseIdx++;
+                tryNext();
+            };
+            document.head.appendChild(s);
         }
+        tryNext();
+    })();
     </script>
-    <script type="module">
+
+    <script>
+        function startMathDraw() {
         // 引入 Three.js 核心 + OrbitControls（相机轨道控制）+ CSS2DRenderer（HTML 标签渲染）
-        import * as THREE from 'three';
-        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-        import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+        // （r147 UMD addons 挂在 THREE 命名空间下：THREE.OrbitControls / THREE.CSS2DRenderer / THREE.CSS2DObject）
 
         // ==================== 场景初始化 ====================
         // Scene：所有 3D 对象的容器
@@ -434,7 +504,7 @@
 
         // CSS2DRenderer：把 CSS2DObject 的 DOM 节点叠加渲染到 3D 坐标对应位置
         // 用于绘制坐标轴字母（X/Y/Z）和刻度数字
-        const labelRenderer = new CSS2DRenderer();
+        const labelRenderer = new THREE.CSS2DRenderer();
         labelRenderer.setSize(window.innerWidth, window.innerHeight);
         labelRenderer.domElement.style.position = 'absolute';
         labelRenderer.domElement.style.top = '0px';
@@ -443,7 +513,7 @@
         document.body.appendChild(labelRenderer.domElement);
 
         // OrbitControls：鼠标左键旋转、滚轮缩放、右键平移；手机端单指旋转、双指缩放
-        const controls = new OrbitControls(camera, renderer.domElement);
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
         controls.enableDamping = true;          // 开启阻尼惯性，旋转更顺滑
         controls.dampingFactor = 0.05;
         controls.target.set(0, 0, 0);           // 围绕原点旋转
@@ -622,7 +692,7 @@
                 div.style.fontSize = `${fontSize}px`;
                 div.style.fontWeight = 'bold';
                 div.style.textShadow = '1px 1px 2px black';   // 黑色描边，保证在亮色背景上可读
-                const label = new CSS2DObject(div);
+                const label = new THREE.CSS2DObject(div);
                 label.position.copy(position);
                 axesGroup.add(label);
             };
@@ -701,7 +771,7 @@
                     tickDiv.style.fontFamily = 'monospace';
                     tickDiv.style.textShadow = '1px 1px 2px black';
                     tickDiv.style.opacity = '0.9';
-                    const tickLabel = new CSS2DObject(tickDiv);
+                    const tickLabel = new THREE.CSS2DObject(tickDiv);
                     tickLabel.position.copy(tickLabelPos);
                     axesGroup.add(tickLabel);
                 }
@@ -715,7 +785,7 @@
                     zeroDiv.style.fontFamily = 'monospace';
                     zeroDiv.style.textShadow = '1px 1px 2px black';
                     zeroDiv.style.opacity = '0.9';
-                    const zeroLabel = new CSS2DObject(zeroDiv);
+                    const zeroLabel = new THREE.CSS2DObject(zeroDiv);
                     zeroLabel.position.set(-tickLabelOffset, -tickLabelOffset, 0);
                     axesGroup.add(zeroLabel);
                 }
@@ -2016,6 +2086,7 @@
         })();
 
         console.log('✅ 加载完成。显式曲线已改用 Line 直连采样点，消除 Catmull-Rom 过冲。');
+        }
     </script>
 </body>
 </html>

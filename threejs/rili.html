@@ -386,16 +386,17 @@
     }
   </style>
 
-  <!-- importmap：让浏览器知道 `import 'three'` 这种"裸模块名"该去哪加载
-       three r159 起移除了 UMD 构建（build/three.min.js 不存在了），必须用 ESM -->
-  <script type="importmap">
-  {
-    "imports": {
-      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
-      "camera-controls": "https://cdn.jsdelivr.net/npm/camera-controls@2.9.0/dist/camera-controls.module.js"
-    }
-  }
-  </script>
+  <!-- 加载失败提示层（Three.js 全部 CDN 加载失败时显示） -->
+  <div id="loadFail" style="display:none; position:fixed; inset:0; z-index:999;
+      background:var(--loading-bg, #0f172a); color:var(--text-muted, #8ea0b4);
+      font:14px/1.8 'Consolas',monospace; padding:40px; text-align:center;">
+      <div style="font-size:20px; color:#ff7a7a; margin-bottom:12px;">Three.js 加载失败</div>
+      <div id="loadFailTips">
+          所有 CDN 均无法加载。<br>
+          请确认页面以 <b>http://localhost</b> 打开（不能直接双击 HTML），<br>
+          或将 three.min.js 下载到本地后改为 <b>./three.min.js</b>。
+      </div>
+  </div>
 </head>
 <body data-theme="dark">
 
@@ -455,9 +456,82 @@
        （window.Solar / window.Lunar / window.HolidayUtil） -->
   <script src="https://cdn.jsdelivr.net/npm/lunar-javascript@1.7.7/lunar.js"></script>
 
-  <script type="module">
-    import * as THREE from 'three';
-    import CameraControls from 'camera-controls';
+  <script>
+  /* =====================================================================
+     动态加载 Three.js + camera-controls（多 CDN 自动回退，与 piano.html 保持一致）
+     ---------------------------------------------------------------------
+     1. 不使用 ES module / importmap，改用 UMD 全局脚本。
+        原因：file:// 协议下 ES module 会被 CORS 拦截，importmap 也可能解析失败。
+        UMD 版本用普通 <script> 加载，兼容性最好。
+     2. three 固定 0.147.0（最后一个同时提供 build/three.min.js 与
+        examples/js/*.js UMD addons 的版本）；
+        camera-controls 固定 1.37.0（最后一个提供 UMD 构建的版本，
+        2.x 起只有 ESM）。1.37.0 通过 install({THREE}) 注入 three。
+     3. 依次尝试 jsDelivr → Zstatic → unpkg，任一成功即启动。
+     4. 全部失败时给出可操作的排查提示，而非静默卡住。
+     ===================================================================== */
+  (function loadThree() {
+    // 两个包路径不同（three: /build/three.min.js，
+    // camera-controls: /dist/camera-controls.min.js），
+    // 各自维护独立的 CDN 列表，回退时同步切换索引
+    var THREE_BASES = [
+      "https://cdn.jsdelivr.net/npm/three@0.147.0",
+      "https://s4.zstatic.net/npm/three@0.147.0",
+      "https://unpkg.com/three@0.147.0"
+    ];
+    var CC_BASES = [
+      "https://cdn.jsdelivr.net/npm/camera-controls@1.37.0",
+      "https://s4.zstatic.net/npm/camera-controls@1.37.0",
+      "https://unpkg.com/camera-controls@1.37.0"
+    ];
+    // 需要加载的脚本路径：three 核心 → camera-controls
+    var PATHS = ["/build/three.min.js", "/dist/camera-controls.min.js"];
+    var baseIdx = 0, pathIdx = 0;
+
+    function tryNext() {
+      // 所有 CDN 都失败
+      if (baseIdx >= THREE_BASES.length) {
+        var fail = document.getElementById('loadFail');
+        if (fail) fail.style.display = 'block';
+        return;
+      }
+      var s = document.createElement('script');
+      // 第 0 个是 three 核心，第 1 个是 camera-controls addon
+      s.src = (pathIdx === 0 ? THREE_BASES[baseIdx] : CC_BASES[baseIdx]) + PATHS[pathIdx++];
+      s.onload = function () {
+        if (pathIdx < PATHS.length) {
+          // 上一个脚本已加载，继续加载下一个
+          tryNext();
+        } else if (typeof THREE !== 'undefined' && typeof CameraControls !== 'undefined') {
+          // 全部就绪，启动主程序
+          try { startRili(); }
+          catch (err) {
+            // 初始化异常显示在加载层，便于排查
+            var failEl = document.getElementById('loadFail');
+            var tips = document.getElementById('loadFailTips');
+            if (failEl) failEl.style.display = 'block';
+            if (tips) tips.textContent = '初始化失败：' + err.message;
+            console.error(err);
+          }
+        } else {
+          // 加载成功但内容异常，换下一个 CDN
+          pathIdx = 0; baseIdx++;
+          tryNext();
+        }
+      };
+      s.onerror = function () {
+        // 当前 CDN 失败，换下一个（从头加载）
+        pathIdx = 0; baseIdx++;
+        tryNext();
+      };
+      document.head.appendChild(s);
+    }
+    tryNext();
+  })();
+  </script>
+
+  <script>
+    function startRili() {
 
     // ============================================================
     // 0. 安全存储封装
@@ -701,7 +775,8 @@
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setPixelRatio(DPR);
     renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    // r147 用 outputEncoding（r152 起才改名为 outputColorSpace）
+    renderer.outputEncoding = THREE.sRGBEncoding;
     document.getElementById('app').appendChild(renderer.domElement);
 
     const canvasEl = renderer.domElement;
@@ -731,8 +806,13 @@
     cameraControls.touches.two = CameraControls.ACTION.NONE;
     cameraControls.touches.three = CameraControls.ACTION.NONE;
 
-    cameraControls.smoothTime = 0.2;
-    cameraControls.draggingSmoothTime = 0.08;
+    // 【版本差异】camera-controls 1.37.0 用 dampingFactor / draggingDampingFactor
+    //   （2.x 改名为 smoothTime / draggingSmoothTime）。
+    //   dampingFactor 是"每帧插值比例"（越小越平滑），换算近似：
+    //     2.x smoothTime ≈ 0.2s → 1.x dampingFactor ≈ 1/(60*0.2) ≈ 0.08
+    //     2.x draggingSmoothTime ≈ 0.08s → 1.x draggingDampingFactor ≈ 1/(60*0.08) ≈ 0.2
+    cameraControls.dampingFactor = 0.08;
+    cameraControls.draggingDampingFactor = 0.2;
 
     // 缩放上下限：minZoom=baseZoom/3 大致等于全览，maxZoom=baseZoom*8 单卡满屏
     cameraControls.minZoom = baseZoom / 3;
@@ -1289,7 +1369,8 @@
       const texture = new THREE.CanvasTexture(canvas);
       // anisotropy：斜视角下纹理更清晰（不设的话斜着看会有锯齿）
       texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
-      texture.colorSpace = THREE.SRGBColorSpace;
+      // r147 用 texture.encoding（r152 起才改名为 colorSpace）
+      texture.encoding = THREE.sRGBEncoding;
       // 关键：禁用 mipmap 生成，否则每次重绘都要生成一整条 mip 链，浪费性能
       texture.minFilter = THREE.LinearFilter;
       texture.magFilter = THREE.LinearFilter;
@@ -2137,6 +2218,7 @@
     updateZoomLabel();
     animate();
     buildCalendar(currentYear);
+    }
   </script>
 </body>
 </html>

@@ -379,22 +379,87 @@
   </div>
 </div>
 
-<!-- ============================================================
-     importmap：声明 three 的 CDN 地址
-     让下面的 import ... from 'three' 能找到模块
-     ============================================================ -->
-<script type="importmap">
-{
-  "imports": {
-    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+<!-- 加载失败提示层（Three.js 全部 CDN 加载失败时显示） -->
+<div id="loadFail" style="display:none; position:fixed; inset:0; z-index:999;
+    background:#05060f; color:#cfd8e6; font:14px/1.8 'Consolas',monospace;
+    padding:40px; text-align:center;">
+    <div style="font-size:20px; color:#ff7a7a; margin-bottom:12px;">Three.js 加载失败</div>
+    <div id="loadFailTips">
+        所有 CDN 均无法加载。<br>
+        请确认页面以 <b>http://localhost</b> 打开（不能直接双击 HTML），<br>
+        或将 three.min.js 下载到本地后改为 <b>./three.min.js</b>。
+    </div>
+</div>
+
+<script>
+/* =====================================================================
+   动态加载 Three.js（多 CDN 自动回退，与 piano.html 保持一致）
+   ---------------------------------------------------------------------
+   1. 不使用 ES module / importmap，改用 UMD 全局脚本。
+      原因：file:// 协议下 ES module 会被 CORS 拦截，importmap 也可能解析失败。
+      UMD 版本用普通 <script> 加载，兼容性最好。
+   2. addons（RoomEnvironment）UMD 构建在 r148 起被移除（examples/js 目录删除），
+      因此统一使用 three@0.147.0 —— 官方最后一个同时提供
+      build/three.min.js 与 examples/js/*.js 的版本。
+   3. 依次尝试 jsDelivr → Zstatic → unpkg，任一成功即启动。
+   4. 全部失败时给出可操作的排查提示，而非静默卡住。
+   ===================================================================== */
+(function loadThree() {
+  var CDN_BASES = [
+    "https://cdn.jsdelivr.net/npm/three@0.147.0",
+    "https://s4.zstatic.net/npm/three@0.147.0",
+    "https://unpkg.com/three@0.147.0"
+  ];
+  // 需要加载的脚本：核心 + RoomEnvironment addon（r147 UMD 版，挂到 THREE 上）
+  var SCRIPTS = [
+    "/build/three.min.js",
+    "/examples/js/environments/RoomEnvironment.js"
+  ];
+  var baseIdx = 0, scriptIdx = 0;
+
+  function tryNext() {
+    // 所有 CDN 都失败
+    if (baseIdx >= CDN_BASES.length) {
+      var fail = document.getElementById('loadFail');
+      if (fail) fail.style.display = 'block';
+      return;
+    }
+    var s = document.createElement('script');
+    s.src = CDN_BASES[baseIdx] + SCRIPTS[scriptIdx++];
+    s.onload = function () {
+      if (scriptIdx < SCRIPTS.length) {
+        // 上一个脚本已加载，继续加载下一个（同一 CDN，保持版本一致）
+        tryNext();
+      } else if (typeof THREE !== 'undefined' && THREE.RoomEnvironment) {
+        // Three.js + addons 已就绪，启动主程序
+        try { startXiaoxiaole(); }
+        catch (err) {
+          // 初始化异常显示在加载层，便于排查
+          var fail = document.getElementById('loadFail');
+          var tips = document.getElementById('loadFailTips');
+          if (fail) fail.style.display = 'block';
+          if (tips) tips.textContent = '初始化失败：' + err.message;
+          console.error(err);
+        }
+      } else {
+        // 加载成功但内容异常，换下一个 CDN
+        scriptIdx = 0; baseIdx++;
+        tryNext();
+      }
+    };
+    s.onerror = function () {
+      // 当前 CDN 失败，换下一个（从头加载核心 + addon）
+      scriptIdx = 0; baseIdx++;
+      tryNext();
+    };
+    document.head.appendChild(s);
   }
-}
+  tryNext();
+})();
 </script>
 
-<script type="module">
-import * as THREE from 'three';
-import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+<script>
+function startXiaoxiaole() {
 
 /* ============================================================
    1. 音效系统（Web Audio 合成，无需外部音频文件）
@@ -544,6 +609,17 @@ renderer.toneMappingExposure = 1.06;
 // 开启阴影，使用软阴影提升质感
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+/* r147 补偿（与 r160 默认行为对齐）：
+ * 1. outputEncoding = sRGB：r160 默认 outputColorSpace = SRGBColorSpace，
+ *    r147 需显式设置 outputEncoding 才能正确输出 sRGB 颜色。
+ * 2. physicallyCorrectLights = true：r155+ 移除了 legacy 灯光的 ×π 增益，
+ *    r160 物理灯光单位下点光强度 16/14 才是真实亮度；r147 默认
+ *    legacy 模式会把点光乘 π，导致画面偏亮偏白，这里手动对齐。
+ * 3. ColorManagement.legacyMode = false：让 setHex/setHSL 做 sRGB→Linear
+ *    转换，与 r160 默认的 ColorManagement.enabled = true 一致。 */
+renderer.outputEncoding = THREE.sRGBEncoding;
+renderer.physicallyCorrectLights = true;
+THREE.ColorManagement.legacyMode = false;
 
 /* ============================================================
    3. 场景 & 2D 正交相机
@@ -562,8 +638,22 @@ camera.position.set(0, 14, 1.5);
 camera.lookAt(0, 0, 0);
 
 // 用 RoomEnvironment 生成环境贴图，让宝石有真实的高光反射
+// （r147 UMD 版 RoomEnvironment 挂在 THREE 命名空间下）
+//
+// 【r147 主光强度补偿】r160 的 RoomEnvironment 内部在物理灯光模式
+// （renderer._useLegacyLights === false）下把主点光强度设为 900，
+// 而 r147 版固定为 5.0 —— 在 physicallyCorrectLights = true 时相差 180 倍，
+// 会导致环境高光几乎消失。这里在生成环境贴图前临时改写 THREE.PointLight
+// 不行（会污染全局），改为构建后手动提升环境场景主光：
+// r147 版源码固定 mainLight intensity = 5.0 / distance 28 / decay 2，
+// 按物理平方衰减 5→900 需要 ×180，与 r160 行为对齐。
+const roomEnv = new THREE.RoomEnvironment();
+roomEnv.traverse((o) => {
+  if (o.isPointLight && o.intensity === 5.0) o.intensity = 900;
+});
 const pmrem = new THREE.PMREMGenerator(renderer);
-scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+scene.environment = pmrem.fromScene(roomEnv, 0.04).texture;
+roomEnv.dispose();
 
 /* ============================================================
    4. 灯光
@@ -1472,6 +1562,7 @@ function animate() {
 fitCamera();     // 初始化相机视口
 goToStart();     // 显示开始面板，等待玩家点击“开始游戏”
 animate();       // 启动渲染循环
+}
 </script>
 </body>
 </html>

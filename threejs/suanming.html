@@ -1,0 +1,1152 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>玄机阁 · 生辰八字命理批算</title>
+<style>
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0}
+body{
+  font-family:"PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,sans-serif;
+  background:#05060b;color:#e6e2d6;min-height:100vh;line-height:1.75;
+  overflow-x:hidden;
+}
+body::before{
+  content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
+  background:
+    radial-gradient(circle at 15% 8%, rgba(96,74,190,.30), transparent 46%),
+    radial-gradient(circle at 85% 82%, rgba(190,128,60,.16), transparent 46%),
+    radial-gradient(circle at 50% 50%, rgba(18,26,56,.55), transparent 72%);
+}
+#stars{position:fixed;inset:0;pointer-events:none;z-index:0}
+#stars i{position:absolute;background:#fff;border-radius:50%;animation:tw 3.4s infinite ease-in-out}
+@keyframes tw{0%,100%{opacity:.12}50%{opacity:.85}}
+@keyframes fadeUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
+.wrap{position:relative;z-index:1;max-width:980px;margin:0 auto;padding:38px 16px 90px}
+
+/* ---------- 头部 ---------- */
+header{text-align:center;margin-bottom:26px}
+header h1{
+  font-size:36px;letter-spacing:.42em;margin:0 0 6px;font-weight:600;
+  background:linear-gradient(180deg,#f7e6b0,#c9a34a 60%,#8a6a22);
+  -webkit-background-clip:text;background-clip:text;color:transparent;
+  text-indent:.42em;
+}
+header .sub{color:#8f8fa6;font-size:13px;letter-spacing:.28em;margin:0}
+header .line{
+  width:180px;height:1px;margin:14px auto 0;
+  background:linear-gradient(90deg,transparent,rgba(216,185,105,.65),transparent);
+}
+
+/* ---------- 标签页 ---------- */
+.tabs{display:flex;justify-content:center;gap:10px;margin:26px 0 22px;flex-wrap:wrap}
+.tab{
+  padding:9px 26px;border-radius:999px;border:1px solid rgba(216,185,105,.28);
+  background:rgba(255,255,255,.02);color:#b9b5a6;font-size:14px;letter-spacing:.12em;
+  cursor:pointer;transition:.28s;font-family:inherit;
+}
+.tab:hover{color:#e8d9a8;border-color:rgba(216,185,105,.55)}
+.tab.active{
+  background:linear-gradient(180deg,rgba(216,185,105,.22),rgba(216,185,105,.06));
+  color:#f4e3b2;border-color:rgba(216,185,105,.72);
+  box-shadow:0 0 22px rgba(216,185,105,.16);
+}
+
+/* ---------- 面板 ---------- */
+.panel{display:none}
+.panel.active{display:block;animation:fadeUp .45s ease both}
+
+/* ---------- 表单 ---------- */
+.form-card{
+  background:linear-gradient(180deg,rgba(24,28,48,.88),rgba(14,17,32,.9));
+  border:1px solid rgba(216,185,105,.2);border-radius:16px;padding:22px 20px;
+  box-shadow:0 12px 40px rgba(0,0,0,.42), inset 0 1px 0 rgba(255,255,255,.04);
+}
+.card-title{
+  font-size:14px;letter-spacing:.24em;color:#d8b969;margin:0 0 16px;font-weight:500;
+  padding-bottom:10px;border-bottom:1px solid rgba(216,185,105,.16);
+}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.field{display:flex;flex-direction:column;gap:6px}
+.field label{font-size:12px;color:#8d8fa6;letter-spacing:.1em}
+.field input,.field select{
+  width:100%;padding:11px 13px;border-radius:10px;font-size:14px;font-family:inherit;
+  background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.1);
+  color:#ece7d8;outline:none;transition:.22s;color-scheme:dark;
+}
+.field input:focus,.field select:focus{
+  border-color:rgba(216,185,105,.65);
+  background:rgba(216,185,105,.07);
+  box-shadow:0 0 0 3px rgba(216,185,105,.1);
+}
+.field select option{background:#131728;color:#e6e2d6}
+
+.btn{
+  display:block;width:100%;margin-top:20px;padding:14px;border:none;border-radius:12px;
+  font-size:15px;letter-spacing:.32em;text-indent:.32em;font-family:inherit;font-weight:600;
+  cursor:pointer;transition:.28s;color:#241c05;
+  background:linear-gradient(135deg,#f0d68f,#c9a34a 55%,#a8842f);
+  box-shadow:0 8px 26px rgba(200,163,74,.24);
+}
+.btn:hover{transform:translateY(-2px);box-shadow:0 12px 32px rgba(200,163,74,.4)}
+.btn:active{transform:translateY(0)}
+
+/* ---------- 结果 ---------- */
+.result{margin-top:26px}
+.result>*{animation:fadeUp .5s ease both}
+.result>*:nth-child(1){animation-delay:.03s}
+.result>*:nth-child(2){animation-delay:.08s}
+.result>*:nth-child(3){animation-delay:.13s}
+.result>*:nth-child(4){animation-delay:.18s}
+.result>*:nth-child(5){animation-delay:.23s}
+.result>*:nth-child(6){animation-delay:.28s}
+
+.result-head{text-align:center;margin-bottom:20px}
+.result-head h2{margin:0;font-size:23px;letter-spacing:.2em;color:#f2e4bc;font-weight:600}
+.result-head .sub{color:#8a8ca3;font-size:13px;margin:6px 0 0;letter-spacing:.08em}
+.badge{
+  display:inline-block;font-size:11px;padding:1px 9px;border-radius:999px;
+  border:1px solid rgba(216,185,105,.5);color:#d8b969;letter-spacing:.1em;
+  vertical-align:middle;margin-left:6px;
+}
+
+/* 四柱 */
+.pillars{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px}
+.pillar{
+  text-align:center;padding:14px 4px 12px;border-radius:13px;
+  background:linear-gradient(180deg,rgba(30,35,60,.85),rgba(15,18,34,.9));
+  border:1px solid rgba(216,185,105,.18);
+}
+.p-label{font-size:11px;color:#7f829b;letter-spacing:.16em;margin-bottom:8px}
+.p-gan,.p-zhi{font-size:26px;font-weight:600;line-height:1.25;font-family:"Songti SC",serif}
+.p-zhi{margin-top:2px}
+.p-wx{font-size:10.5px;color:#6f7288;margin-top:6px;letter-spacing:.08em}
+
+/* 信息条 */
+.chips{display:flex;flex-wrap:wrap;gap:9px;margin-bottom:18px}
+.chip{
+  padding:7px 15px;border-radius:10px;font-size:12.5px;letter-spacing:.06em;
+  background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.09);color:#c8c5b6;
+}
+.chip b{color:#e8cf8d;font-weight:600}
+
+/* 五行 */
+.wx-box{
+  background:linear-gradient(180deg,rgba(24,28,48,.8),rgba(14,17,32,.85));
+  border:1px solid rgba(216,185,105,.18);border-radius:16px;padding:18px 20px;margin-bottom:16px;
+}
+.sec-title{
+  font-size:13px;letter-spacing:.24em;color:#d8b969;margin:0 0 14px;font-weight:500;
+}
+.wx-row{display:flex;align-items:center;gap:11px;margin-bottom:9px;font-size:13px}
+.wx-row:last-child{margin-bottom:0}
+.wx-name{width:20px;text-align:center;font-weight:600}
+.wx-bar{flex:1;height:8px;border-radius:99px;background:rgba(255,255,255,.07);overflow:hidden}
+.wx-fill{height:100%;border-radius:99px;transition:width .9s cubic-bezier(.2,.8,.3,1)}
+.wx-num{width:16px;text-align:right;color:#8f91a8;font-size:12px}
+
+/* 评分 */
+.score-card{
+  background:linear-gradient(180deg,rgba(24,28,48,.8),rgba(14,17,32,.85));
+  border:1px solid rgba(216,185,105,.18);border-radius:16px;padding:17px 20px;margin-bottom:13px;
+}
+.score-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:9px}
+.score-head .nm{font-size:14px;letter-spacing:.16em;color:#ddd8c8}
+.score-head .nm em{font-style:normal;margin-right:8px;opacity:.85}
+.score-head .val{font-size:20px;font-weight:700;font-family:"Songti SC",serif}
+.score-head .val small{font-size:11px;color:#7f829b;font-weight:400;margin-left:3px}
+.bar{height:7px;border-radius:99px;background:rgba(255,255,255,.07);overflow:hidden;margin-bottom:11px}
+.bar-fill{height:100%;border-radius:99px;transition:width 1s cubic-bezier(.2,.8,.3,1)}
+.score-text{margin:0;font-size:13.5px;color:#a8a99c;line-height:1.85}
+
+/* 合婚 */
+.pair-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.pair-result{
+  margin-top:26px;text-align:center;
+  background:linear-gradient(180deg,rgba(28,32,56,.9),rgba(14,17,32,.92));
+  border:1px solid rgba(216,185,105,.25);border-radius:18px;padding:30px 22px;
+  box-shadow:0 16px 50px rgba(0,0,0,.45);
+}
+.big-score{
+  font-size:62px;font-weight:700;line-height:1;font-family:"Songti SC",serif;
+  -webkit-background-clip:text;background-clip:text;color:transparent;
+}
+.big-score small{font-size:18px;-webkit-text-fill-color:#8f91a8;color:#8f91a8}
+.pair-title{font-size:19px;letter-spacing:.3em;color:#f2e4bc;margin:12px 0 6px;text-indent:.3em}
+.pair-sub{font-size:13px;color:#8a8ca3;margin:0 0 18px}
+
+.radar-wrap{display:flex;justify-content:center;margin:6px 0 10px}
+.radar-wrap canvas{max-width:100%;height:auto!important}
+
+.pair-people{display:grid;grid-template-columns:1fr 1fr;gap:14px;text-align:left;margin-top:8px}
+.person-name{font-size:13px;color:#d8b969;letter-spacing:.16em;margin-bottom:8px}
+.person-meta{font-size:12px;color:#8a8ca3;margin-top:8px;line-height:1.7}
+
+.pair-dims{text-align:left;margin-top:6px}
+.pair-dims .sec-title{margin-top:24px}
+
+.basis-list{display:grid;gap:8px;text-align:left;margin-top:6px}
+.basis-item{
+  font-size:12.5px;color:#9a9cae;padding:10px 15px;border-radius:9px;
+  background:rgba(255,255,255,.028);border-left:2px solid rgba(216,185,105,.3);
+}
+.basis-item b{color:#c9b06a;font-weight:600;margin-right:8px}
+
+.advice{
+  text-align:left;margin-top:20px;font-size:13px;color:#b3b0a0;line-height:1.9;
+  padding:15px 18px;border-radius:12px;
+  background:linear-gradient(135deg,rgba(216,185,105,.10),rgba(216,185,105,.03));
+  border:1px solid rgba(216,185,105,.24);
+}
+.advice b{color:#f0d68f}
+
+.err{color:#ff8a7a;font-size:13px;margin-top:12px;text-align:center}
+
+@media(max-width:640px){
+  header h1{font-size:27px;letter-spacing:.3em;text-indent:.3em}
+  .grid2{grid-template-columns:1fr}
+  .pair-grid{grid-template-columns:1fr}
+  .pair-people{grid-template-columns:1fr}
+  .pillars{gap:7px}
+  .p-gan,.p-zhi{font-size:21px}
+  .big-score{font-size:50px}
+  .wrap{padding:26px 13px 70px}
+}
+</style>
+</head>
+<body>
+<div id="stars"></div>
+
+<div class="wrap">
+  <header>
+    <h1>玄机阁</h1>
+    <p class="sub">生辰八字 · 五行八卦 · 命理推演</p>
+    <div class="line"></div>
+  </header>
+
+  <nav class="tabs">
+    <button class="tab active" data-tab="single">命理批算</button>
+    <button class="tab" data-tab="pair">姻缘合婚</button>
+  </nav>
+
+  <!-- ============ 单人 ============ -->
+  <section class="panel active" id="panel-single">
+    <div class="form-card">
+      <h3 class="card-title">个 人 信 息</h3>
+      <div class="grid2">
+        <div class="field">
+          <label>姓 名</label>
+          <input id="s-name" type="text" placeholder="请输入姓名" maxlength="12" autocomplete="off">
+        </div>
+        <div class="field">
+          <label>性 别</label>
+          <select id="s-gender">
+            <option value="男">男</option>
+            <option value="女">女</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>出生日期（公历）</label>
+          <input id="s-date" type="date" min="1900-01-01" max="2100-12-31">
+        </div>
+        <div class="field">
+          <label>出生时辰</label>
+          <select id="s-hour"></select>
+        </div>
+      </div>
+      <button class="btn" id="s-go">开 始 批 算</button>
+    </div>
+    <div id="s-result"></div>
+  </section>
+
+  <!-- ============ 合婚 ============ -->
+  <section class="panel" id="panel-pair">
+    <div class="pair-grid">
+      <div class="form-card">
+        <h3 class="card-title">甲 方</h3>
+        <div class="field" style="margin-bottom:13px">
+          <label>姓 名</label>
+          <input id="a-name" type="text" placeholder="请输入姓名" maxlength="12" autocomplete="off">
+        </div>
+        <div class="field" style="margin-bottom:13px">
+          <label>性 别</label>
+          <select id="a-gender"><option value="男">男</option><option value="女">女</option></select>
+        </div>
+        <div class="field" style="margin-bottom:13px">
+          <label>出生日期（公历）</label>
+          <input id="a-date" type="date" min="1900-01-01" max="2100-12-31">
+        </div>
+        <div class="field">
+          <label>出生时辰</label>
+          <select id="a-hour"></select>
+        </div>
+      </div>
+      <div class="form-card">
+        <h3 class="card-title">乙 方</h3>
+        <div class="field" style="margin-bottom:13px">
+          <label>姓 名</label>
+          <input id="b-name" type="text" placeholder="请输入姓名" maxlength="12" autocomplete="off">
+        </div>
+        <div class="field" style="margin-bottom:13px">
+          <label>性 别</label>
+          <select id="b-gender"><option value="女">女</option><option value="男">男</option></select>
+        </div>
+        <div class="field" style="margin-bottom:13px">
+          <label>出生日期（公历）</label>
+          <input id="b-date" type="date" min="1900-01-01" max="2100-12-31">
+        </div>
+        <div class="field">
+          <label>出生时辰</label>
+          <select id="b-hour"></select>
+        </div>
+      </div>
+    </div>
+    <button class="btn" id="p-go">合 婚 配 对</button>
+    <div id="p-result"></div>
+  </section>
+</div>
+
+<script>
+/* =========================================================
+   常量
+   ========================================================= */
+const GAN = ['甲','乙','丙','丁','戊','己','庚','辛','壬','癸'];
+const ZHI = ['子','丑','寅','卯','辰','巳','午','未','申','酉','戌','亥'];
+const GAN_WX = ['木','木','火','火','土','土','金','金','水','水'];
+const ZHI_WX = ['水','土','木','木','土','火','火','土','金','金','土','水'];
+const SHENGXIAO = ['鼠','牛','虎','兔','龙','蛇','马','羊','猴','鸡','狗','猪'];
+const SHICHEN = ['子时','丑时','寅时','卯时','辰时','巳时','午时','未时','申时','酉时','戌时','亥时'];
+const WX_LIST = ['金','木','水','火','土'];
+const WX_COLOR = { 金:'#e8c95c', 木:'#5fd68a', 水:'#5aa9f0', 火:'#ff6f61', 土:'#c99a5b' };
+
+const KE      = { 木:'土', 火:'金', 土:'水', 金:'木', 水:'火' };
+const SHENG   = { 木:'火', 火:'土', 土:'金', 金:'水', 水:'木' };
+const BEI_KE  = { 木:'金', 火:'水', 土:'木', 金:'火', 水:'土' };
+
+const GUA = {
+  1:{name:'坎',wx:'水',desc:'坎为水，主智慧深沉。一生多思多虑，心思缜密，宜近水而居、从事流动或智慧型之业。'},
+  2:{name:'坤',wx:'土',desc:'坤为地，主厚德载物。性情温顺包容，踏实稳重，宜守成不宜冒进，晚年家业安稳。'},
+  3:{name:'震',wx:'木',desc:'震为雷，主奋发进取。行动力强，敢为人先，一生多有变动与机遇，宜动中求财。'},
+  4:{name:'巽',wx:'木',desc:'巽为风，主机敏灵活。善于交际、长于谋划，宜文职、教育、贸易之属。'},
+  5:{name:'中',wx:'土',desc:'中宫之数，寄旺四季。性情中和，一生平稳少大波折，宜守中道、广积福德。'},
+  6:{name:'乾',wx:'金',desc:'乾为天，主刚健果决。有领导之才、决断之力，宜大展宏图，居管理或开创之位。'},
+  7:{name:'兑',wx:'金',desc:'兑为泽，主口才悦人。人缘颇佳，善于表达，宜从事言语、艺术、服务之业。'},
+  8:{name:'艮',wx:'土',desc:'艮为山，主沉稳笃定。厚积薄发，能守能持，宜专精一业，中年后渐显。'},
+  9:{name:'离',wx:'火',desc:'离为火，主光明外向。才情外露，热心助人，宜从事文化、传媒、教育之事。'}
+};
+
+const SHICHEN_OPTS = [
+  ['子时（23:00 - 00:59）',23],['丑时（01:00 - 02:59）',1],
+  ['寅时（03:00 - 04:59）',3],['卯时（05:00 - 06:59）',5],
+  ['辰时（07:00 - 08:59）',7],['巳时（09:00 - 10:59）',9],
+  ['午时（11:00 - 12:59）',11],['未时（13:00 - 14:59）',13],
+  ['申时（15:00 - 16:59）',15],['酉时（17:00 - 18:59）',17],
+  ['戌时（19:00 - 20:59）',19],['亥时（21:00 - 22:59）',21]
+];
+
+/* =========================================================
+   工具
+   ========================================================= */
+const clamp = (v,a,b)=>Math.max(a,Math.min(b,v));
+
+function hashStr(s){
+  let h = 2166136261;
+  for (let i=0;i<s.length;i++){ h ^= s.charCodeAt(i); h = Math.imul(h,16777619); }
+  return h >>> 0;
+}
+function makeRng(seed){
+  let s = seed >>> 0;
+  return function(){ s = (Math.imul(s,1664525) + 1013904223) >>> 0; return s / 4294967296; };
+}
+function two(n){ return n < 10 ? '0'+n : ''+n; }
+
+/* =========================================================
+   八字排盘
+   ========================================================= */
+const JIEQI = [6,4,6,5,6,6,7,8,8,8,7,7];
+const ZHI_OF_MONTH = {1:1,2:2,3:3,4:4,5:5,6:6,7:7,8:8,9:9,10:10,11:11,12:0};
+
+function computeBaZi(y,m,d,h){
+  let by = y;
+  if (m === 1 || (m === 2 && d < 4)) by = y - 1;
+  const yi = ((by - 4) % 60 + 60) % 60;
+  const yGan = yi % 10, yZhi = yi % 12;
+
+  let mm = m;
+  if (d < JIEQI[m-1]) mm = m - 1;
+  if (mm === 0) mm = 12;
+  const mZhi = ZHI_OF_MONTH[mm];
+  const mStart = [2,4,6,8,0][yGan % 5];
+  const mGan = (mStart + ((mZhi - 2) % 12 + 12) % 12) % 10;
+
+  const a  = Math.floor((14 - m) / 12);
+  const y2 = y + 4800 - a;
+  const m2 = m + 12 * a - 3;
+  let jdn = d + Math.floor((153*m2 + 2)/5) + 365*y2
+          + Math.floor(y2/4) - Math.floor(y2/100) + Math.floor(y2/400) - 32045;
+  if (h >= 23) jdn += 1;
+  const di = ((jdn + 49) % 60 + 60) % 60;
+  const dGan = di % 10, dZhi = di % 12;
+
+  const hz = Math.floor(((h + 1) % 24) / 2);
+  const hGan = (dGan * 2 + hz) % 10;
+
+  return { yGan, yZhi, mGan, mZhi, dGan, dZhi, hGan, hz, bYear: by };
+}
+
+function countWuXing(bz){
+  const c = { 金:0, 木:0, 水:0, 火:0, 土:0 };
+  [bz.yGan, bz.mGan, bz.dGan, bz.hGan].forEach(g => c[GAN_WX[g]]++);
+  [bz.yZhi, bz.mZhi, bz.dZhi, bz.hz].forEach(z => c[ZHI_WX[z]]++);
+  return c;
+}
+
+function getConstellation(m, d){
+  const edge = [20,19,21,20,21,22,23,23,23,24,23,22];
+  const names = ['水瓶座','双鱼座','白羊座','金牛座','双子座','巨蟹座',
+                 '狮子座','处女座','天秤座','天蝎座','射手座','摩羯座'];
+  if (d < edge[m-1]) return names[(m - 2 + 12) % 12];
+  return names[m-1];
+}
+
+function getMingGua(year, gender){
+  const yy = ((year % 100) + 100) % 100;
+  let n;
+  if (gender === '男'){
+    n = (100 - yy) % 9;
+    if (n === 0) n = 9;
+    if (n === 5) n = 2;
+  } else {
+    n = (yy - 4) % 9;
+    if (n < 0) n += 9;
+    if (n === 0) n = 9;
+    if (n === 5) n = 8;
+  }
+  return n;
+}
+
+const NUM_DESC = [
+  '太极之数，万物开泰，生生不息，福寿绵长。',
+  '两仪之数，混沌未开，进退保守，需待时机。',
+  '三才之数，天地人和，智达明敏，名利双收。',
+  '四象之数，待于时运，凡事谨慎，方可安稳。',
+  '五行之数，阴阳和合，福禄双全，家门兴隆。',
+  '六爻之数，发展变化，天德地祥，安稳吉庆。',
+  '七政之数，精悍严谨，独立权威，能成大业。',
+  '八卦之数，意志刚健，勤勉发展，终有所成。',
+  '九宫之数，大成之数，蕴含凶险，需谨守分寸。'
+];
+function nameNumber(name){
+  let n = 0;
+  for (const ch of name) n += ch.codePointAt(0);
+  return (n % 9);
+}
+
+/* =========================================================
+   分级与文案
+   ========================================================= */
+const TIER_NAME = ['上上','上吉','中上','中平','中下','下下'];
+function tierOf(s){
+  if (s >= 90) return 0;
+  if (s >= 80) return 1;
+  if (s >= 70) return 2;
+  if (s >= 60) return 3;
+  if (s >= 50) return 4;
+  return 5;
+}
+function tierColor(s){
+  return 'hsl(' + Math.round(clamp(s,30,100) * 1.15) + ',72%,62%)';
+}
+function scoreColor(s){
+  const hue = Math.round(clamp(s, 30, 100) * 1.15);
+  return `linear-gradient(90deg, hsl(${hue},68%,42%), hsl(${hue},80%,62%))`;
+}
+
+const TEXT = {
+  overall: [
+    '命格清奇，四柱流通，乃天生福厚之造。一生行运顺遂，贵人常伴，逢凶化吉，晚运尤佳，可谓"福寿双全"之命。',
+    '八字格局端正，五行配合得宜。少年略有辛劳，中年渐入佳境，事业家业皆有可观，属越走越顺之命。',
+    '命局中平向好，一生无大灾大难，亦少有大富大贵。安分守己、勤勉持家，则衣食无忧，晚景安泰。',
+    '四柱略有偏枯，一生起伏不定。早年多劳碌，中年后渐稳，凡事需量力而行，戒骄戒躁，终可安身立命。',
+    '命局偏弱，诸事多阻。宜修身养性、广结善缘，以德补命。中年后运势渐开，若能守正不移，仍有转机。',
+    '八字刑冲较重，一生奔波劳碌。然"命由天定，运由己造"，若能积德行善、谨言慎行，亦可逢凶化吉，晚年得安。'
+  ],
+  wealth: [
+    '财星入命，正偏财皆旺。一生财源广进，不乏意外之喜与贵人相助。中年后财库丰盈，宜置产置业，晚岁富足安享。',
+    '财路通达，求财多有顺遂。正财稳定，偏财亦有小得。宜稳中求进，切忌贪多求快，积少成多自可殷实。',
+    '财源平顺，细水长流。收入虽非暴富，却也衣食丰足。理财宜保守，忌借贷投机，守得住方能长久。',
+    '财气中平，求财须多费心力。正财尚可，偏财较弱。宜一技傍身、踏实经营，切忌好高骛远、盲目跟风。',
+    '财运偏弱，钱财易来易去。宜量入为出、开源节流，切忌担保借贷。中年后运程转好，可渐入佳境。',
+    '财星暗淡，求财多波折。然勤俭可补不足，若能专精一业、持之以恒，晚年亦可积攒薄产，衣食无虞。'
+  ],
+  career: [
+    '官星得地，事业腾达。有掌权之象，宜从政从商或居管理之位，中年后事业登顶，名利双收。',
+    '事业运佳，进取有成。宜把握时机、勇于担当，多得上级赏识，四十岁前后可成大器。',
+    '事业平稳，一步一个脚印。宜守正业、精一技，中年后可小有成就，安稳度日。',
+    '事业中平，需靠自身努力。早年多劳少得，中年后渐有起色。宜择一行深耕，忌频繁跳槽。',
+    '事业多阻，易遇瓶颈。宜低调务实、积蓄实力，待时而动。中晚年方有转机。',
+    '官运不显，事业多起伏。宜自谋出路、以技立身，切忌投机取巧。守得云开见月明。'
+  ],
+  marriage: [
+    '夫妻宫得位，配偶贤良，感情笃厚。一生琴瑟和鸣，白头偕老，家宅安宁，为难得之美满姻缘。',
+    '姻缘运佳，易得良配。夫妻相互扶持，虽有口角，不致伤情。婚后家运日隆，宜早定终身。',
+    '婚姻平顺，感情细水长流。宜相互包容体谅，遇事多沟通。中年后感情愈深，相守到老。',
+    '姻缘中等，宜晚婚为宜。早年感情多波折，需历经几番周折方得正缘。择偶重人品，勿重外表。',
+    '夫妻宫稍有动荡，感情易生波折。宜多些耐心与包容，切忌意气用事。若能相互体谅，仍可白头。',
+    '姻缘多阻，情路坎坷。宜修身养性、以诚待人，不宜早婚。晚婚可得安稳，遇良人须珍惜。'
+  ],
+  children: [
+    '子女宫饱满，子嗣聪慧孝顺，儿女双全之象。晚年得子女奉养，天伦之乐可期。',
+    '子女缘佳，后代贤能。教养有方，子女多有出息，能承家业，晚年可享儿孙绕膝之福。',
+    '子女缘分中平，一二子女，孝顺懂事。教养上宜宽严相济，子女成年后多有成就。',
+    '子女缘分稍薄，或得子较晚。宜多行善积德，子女虽少而精，孝顺可期。',
+    '子息运偏弱，养育子女需多费心力。宜注重家教，以德传家，晚年仍可得子女照拂。',
+    '子女宫略显空乏，或与子女聚少离多。然血脉相连，晚年子女必尽孝道，不必过忧。'
+  ],
+  health: [
+    '体魄康健，气血调和。一生少病少灾，寿元绵长，宜保持良好作息，福寿可期。',
+    '身体强健，精力充沛。偶有小恙，不药而愈。宜适度运动，节制饮食，可享高寿。',
+    '健康状况平稳，无大碍。唯需留意肠胃与腰肾，忌暴饮暴食，作息规律则安。',
+    '体质中等，小病常有。宜注意调养，劳逸结合，切忌熬夜伤神，中年后需定期体检。',
+    '身体偏弱，易感疲乏。宜加强锻炼、调理脾胃，凡事勿过度操劳，静养为要。',
+    '先天体质较弱，需多加保养。宜清淡饮食、修身养性，忌烟酒劳碌。若能善待己身，亦可安享天年。'
+  ]
+};
+
+const DIMS = [
+  { key:'overall',  label:'综合运势', icon:'☯' },
+  { key:'wealth',   label:'财运',     icon:'💰' },
+  { key:'career',   label:'事业',     icon:'🏛' },
+  { key:'marriage', label:'婚姻',     icon:'💞' },
+  { key:'children', label:'子女',     icon:'👶' },
+  { key:'health',   label:'健康',     icon:'🌿' }
+];
+
+/* ---------- 合婚八维文案（按 上上/上吉/中上/中平/中下/下下 六档） ---------- */
+const PAIR_TEXT = {
+  character: [
+    '二人性情如水乳交融，一个眼神便知心意，极少红脸争执，是旁人眼中难得的神仙眷侣。',
+    '性情相投，喜好相近，偶有分歧也能很快化解，相处起来轻松自在，不必刻意迁就。',
+    '性格互补多于相似，一个动一个静、一个急一个缓，配合得当反而事半功倍。',
+    '性情有同有异，遇事需时常换位思考，把话说开，方能减少无谓的摩擦。',
+    '性格差异较为明显，遇事易各执己见，需要有一方愿意先退半步，关系才走得顺。',
+    '性情南辕北辙，容易因小事起争端，须有极大的包容心与耐心，方能长久相处。'
+  ],
+  emotion: [
+    '情根深种，一见如故，感情历久弥新，多年之后仍能像初识时心动，令人艳羡。',
+    '情深意笃，日常多有甜蜜小惊喜，彼此都是对方最踏实的依靠。',
+    '感情稳步升温，平淡中见真情，不轰轰烈烈却细水长流。',
+    '感情浓度适中，需要多制造共同经历与仪式感，才能持续升温。',
+    '感情表达较为内敛，容易让对方感到疏离，宜多些主动与直白的表达。',
+    '情感联结偏弱，宜用心培养共同话题，否则日久易生淡漠与隔阂。'
+  ],
+  wealth: [
+    '一个善开源一个善节流，财库越积越厚，家业兴旺，是典型的"越过越宽裕"之配。',
+    '理财观念相近，能同心协力积累家财，日子一年比一年红火。',
+    '财路各有侧重，合则资源互补，宜共同规划大项开支，稳中求进。',
+    '消费观略有差异，宜提前商定家庭财务规则，避免因钱伤情。',
+    '一方偏节俭一方偏随性，需建立透明的账目与预算，各管一部分更省心。',
+    '金钱观念冲突较大，切忌共同担保或大额借贷，宜各管各账、分开规划。'
+  ],
+  career: [
+    '一人主外一人主内，或并肩作战，事业如虎添翼，彼此都是对方最有力的后盾。',
+    '能互相提供资源与人脉，一方的机遇常成为两人共同的机会，携手共进。',
+    '事业上各有节奏，关键时刻能给予对方实质支持，互不拖累。',
+    '事业互助有限，宜各自发展、互不牵绊，反而能减少许多争执。',
+    '易在职业选择上产生分歧，重大决定宜各自判断，少替对方拍板。',
+    '事业方向差异过大，或会互相消耗精力，宜保持适当独立，各谋前程。'
+  ],
+  family: [
+    '治家同心，子女聪慧孝顺，家中其乐融融，三代同堂而和睦，福泽绵长。',
+    '对家庭的期待一致，教养理念相近，儿女多能成才，家中少有长幼之争。',
+    '家庭氛围和睦，偶有育儿分歧，多沟通即可化解，不必上纲上线。',
+    '家事需明确分工，遇长辈或子女问题宜早商定立场，避免临时起意。',
+    '家庭观念有落差，宜划定边界，避免原生家庭过度介入小家庭事务。',
+    '家事易生嫌隙，须坦诚协商，必要时请第三方调解，切勿各自憋气。'
+  ],
+  health: [
+    '一个照顾一个被照顾，相互提醒作息与饮食，双双康健长寿，晚年犹能同行远游。',
+    '生活作息能彼此督促，同游同养，身心俱佳，是彼此最好的"健康监督员"。',
+    '身体各有小恙，正好互相照拂，宜结伴运动，把养生变成两个人的乐趣。',
+    '宜各自留意自身旧疾，勿因迁就对方而忽略身体发出的信号。',
+    '一方体弱时另一方需多担待，宜提前规划照护安排，别让疲惫积成怨气。',
+    '双方皆需多关注健康，切忌熬夜劳碌，宜定期体检，把健康放在第一位。'
+  ],
+  comm: [
+    '心有灵犀，未尽之言也能领会，争执极少且从不过夜，沟通成本极低。',
+    '表达直接坦诚，误会能当天化解，很少把怨气积在心里。',
+    '沟通顺畅，偶有词不达意，但都愿意主动解释，不会冷战。',
+    '需要刻意留出沟通时间，情绪上头时宜先冷静再谈，避免话赶话。',
+    '易因表达方式起误解，宜就事论事、少翻旧账，把"我觉得"挂在嘴边。',
+    '沟通模式差异大，一方冷一方热，需学习非暴力沟通，先讲感受再讲道理。'
+  ],
+  lasting: [
+    '天作之合，风雨同舟，可期白头偕老、儿孙绕膝，是一段经得起岁月考验的缘分。',
+    '根基稳固，纵有风浪也能携手渡过，晚景安和，越老越有滋味。',
+    '感情基础扎实，只要用心经营，可相伴到老，中途小坎不足为惧。',
+    '需共同面对几次考验，过了这道坎，感情反而会比从前更牢固。',
+    '相处易有周期性摩擦，宜建立共同目标来维系，别让琐事磨掉初心。',
+    '缘分需极大耐心浇灌，若双方都不愿让步，恐难长久，宜慎始慎终。'
+  ]
+};
+
+const PAIR_ADVICE = {
+  character:'遇分歧时先各退半步，别在情绪上头时下定论。',
+  emotion:'多制造共同经历与仪式感，感情需要主动添柴。',
+  wealth:'提前商定家庭财务规则，大额支出共同决策。',
+  career:'尊重彼此的职业节奏，关键时刻给予实质支持。',
+  family:'育儿与长辈事宜宜早定边界，避免原生家庭过度介入。',
+  health:'互相督促作息与体检，别为迁就对方而忽略身体。',
+  comm:'就事论事、不翻旧账，情绪上头时先冷静再谈。',
+  lasting:'建立共同目标，让关系有方向感，才能走得长远。'
+};
+
+/* =========================================================
+   单人批算
+   ========================================================= */
+function analyzeSingle(name, gender, y, m, d, h){
+  const bz = computeBaZi(y, m, d, h);
+  const counts = countWuXing(bz);
+
+  const seed = hashStr(name + '|' + gender + '|' + y + '-' + m + '-' + d + '-' + h
+                       + '|' + bz.yGan + bz.yZhi + bz.mGan + bz.mZhi + bz.dGan + bz.dZhi + bz.hGan + bz.hz);
+  const rand = makeRng(seed);
+
+  const vals = WX_LIST.map(k => counts[k]);
+  const zeros = vals.filter(v => v === 0).length;
+  const maxC = Math.max(...vals);
+
+  const base = clamp(84 - zeros * 8 - Math.max(0, maxC - 2) * 7, 46, 90);
+  const dim = (spread)=> clamp(Math.round(base + (rand()*2 - 1) * spread), 40, 98);
+
+  const dayWX  = GAN_WX[bz.dGan];
+  const caiWX  = KE[dayWX];
+  const guanWX = BEI_KE[dayWX];
+
+  const scores = {};
+  scores.overall  = clamp(Math.round(base + (rand()*2-1)*8), 45, 98);
+  scores.wealth   = clamp(Math.round(dim(15) + (counts[caiWX]  - 1.6) * 5), 40, 98);
+  scores.career   = clamp(Math.round(dim(15) + (counts[guanWX] - 1.6) * 4), 40, 98);
+  scores.marriage = clamp(Math.round(dim(17)), 40, 98);
+  scores.children = clamp(Math.round(dim(17)), 40, 98);
+  scores.health   = clamp(Math.round(dim(14) + (counts[SHENG[dayWX]] - 1.6) * 3), 40, 98);
+
+  const guaNum = getMingGua(bz.bYear, gender);
+  const gua = GUA[guaNum];
+  const nn = nameNumber(name);
+
+  return {
+    name, gender, y, m, d, h,
+    bz, counts, scores, guaNum, gua,
+    zodiac: SHENGXIAO[bz.yZhi],
+    constellation: getConstellation(m, d),
+    shichen: SHICHEN[bz.hz],
+    dayMaster: GAN[bz.dGan] + dayWX,
+    nameNum: nn + 1,
+    nameDesc: NUM_DESC[nn]
+  };
+}
+
+function renderSingle(r){
+  const bz = r.bz;
+  const pillars = [
+    { label:'年柱', gan:bz.yGan, zhi:bz.yZhi },
+    { label:'月柱', gan:bz.mGan, zhi:bz.mZhi },
+    { label:'日柱', gan:bz.dGan, zhi:bz.dZhi },
+    { label:'时柱', gan:bz.hGan, zhi:bz.hz }
+  ];
+
+  const pillarHTML = pillars.map(p => {
+    const gw = GAN_WX[p.gan], zw = ZHI_WX[p.zhi];
+    return `<div class="pillar">
+      <div class="p-label">${p.label}</div>
+      <div class="p-gan" style="color:${WX_COLOR[gw]}">${GAN[p.gan]}</div>
+      <div class="p-zhi" style="color:${WX_COLOR[zw]}">${ZHI[p.zhi]}</div>
+      <div class="p-wx">${gw} · ${zw}</div>
+    </div>`;
+  }).join('');
+
+  const chips = [
+    `生肖 <b>${r.zodiac}</b>`,
+    `星座 <b>${r.constellation}</b>`,
+    `日主 <b>${r.dayMaster}</b>`,
+    `命卦 <b>${r.gua.name}卦（${r.gua.wx}）</b>`,
+    `时辰 <b>${r.shichen}</b>`,
+    `姓名灵数 <b>${r.nameNum}</b>`
+  ].map(c => `<div class="chip">${c}</div>`).join('');
+
+  const total = 8;
+  const wxHTML = WX_LIST.map(k => {
+    const n = r.counts[k];
+    const pct = Math.round(n / total * 100);
+    return `<div class="wx-row">
+      <span class="wx-name" style="color:${WX_COLOR[k]}">${k}</span>
+      <div class="wx-bar"><div class="wx-fill" style="width:${Math.max(pct,2)}%;background:${WX_COLOR[k]}"></div></div>
+      <span class="wx-num">${n}</span>
+    </div>`;
+  }).join('');
+
+  const lackList = WX_LIST.filter(k => r.counts[k] === 0);
+  const lackText = lackList.length
+    ? `<div class="note" style="margin-top:14px">此命五行<b>缺 ${lackList.join('、')}</b>，宜在方位、色彩、职业取向上有所补益，以趋中和。</div>`
+    : `<div class="note" style="margin-top:14px">此命<b>五行俱全</b>，金木水火土皆有，命局较为均衡，为人处世多能圆融。</div>`;
+
+  const scoresHTML = DIMS.map(dm => {
+    const s = r.scores[dm.key];
+    const t = tierOf(s);
+    return `<div class="score-card">
+      <div class="score-head">
+        <span class="nm"><em>${dm.icon}</em>${dm.label}<span class="badge" style="margin-left:10px">${TIER_NAME[t]}</span></span>
+        <span class="val" style="color:${tierColor(s)}">${s}<small>分</small></span>
+      </div>
+      <div class="bar"><div class="bar-fill" style="width:${s}%;background:${scoreColor(s)}"></div></div>
+      <p class="score-text">${TEXT[dm.key][t]}</p>
+    </div>`;
+  }).join('');
+
+  document.getElementById('s-result').innerHTML = `
+    <div class="result">
+      <div class="result-head">
+        <h2>${r.name}<span class="badge">${r.gender}</span></h2>
+        <p class="sub">公历 ${r.y} 年 ${r.m} 月 ${r.d} 日 · ${r.shichen}</p>
+      </div>
+
+      <div class="pillars">${pillarHTML}</div>
+      <div class="chips">${chips}</div>
+
+      <div class="wx-box">
+        <h3 class="sec-title">五 行 分 布</h3>
+        ${wxHTML}
+        ${lackText}
+      </div>
+
+      <div class="wx-box">
+        <h3 class="sec-title">卦 象 解 读</h3>
+        <p class="score-text" style="margin:0">
+          <b style="color:#d8b969">${r.gua.name}卦</b>（五行属${r.gua.wx}）：${r.gua.desc}
+        </p>
+        <p class="score-text" style="margin:10px 0 0">
+          姓名灵数 <b style="color:#d8b969">${r.nameNum}</b>：${r.nameDesc}
+        </p>
+      </div>
+
+      <div class="wx-box" style="padding-bottom:6px">
+        <h3 class="sec-title">一 生 运 势 详 批</h3>
+      </div>
+      ${scoresHTML}
+    </div>
+  `;
+}
+
+/* =========================================================
+   合婚：地支关系
+   ========================================================= */
+const LIUHE = [[0,1],[2,11],[3,10],[4,9],[5,8],[6,7]];
+const SANHE = [[8,0,4],[11,3,7],[2,6,10],[5,9,1]];
+const CHONG = [[0,6],[1,7],[2,8],[3,9],[4,10],[5,11]];
+const HAI   = [[0,7],[1,6],[2,5],[3,4],[8,11],[9,10]];
+
+function pairHas(arr,a,b){
+  return arr.some(p => (p[0]===a && p[1]===b) || (p[0]===b && p[1]===a));
+}
+function sanheHas(arr,a,b){
+  return arr.some(g => g.includes(a) && g.includes(b));
+}
+
+/* =========================================================
+   合婚：八维推演
+   ========================================================= */
+function calcPair(A, B){
+  const za = A.bz.yZhi, zb = B.bz.yZhi;   // 年支（生肖）
+  const da = A.bz.dZhi, db = B.bz.dZhi;   // 日支（夫妻宫）
+  const ha = A.bz.hz,   hb = B.bz.hz;     // 时支（子女/晚年宫）
+  const wxA = GAN_WX[A.bz.dGan], wxB = GAN_WX[B.bz.dGan];
+
+  const rng = makeRng(hashStr('pair|' + A.name + '|' + B.name + '|'
+        + A.y + A.m + A.d + '|' + B.y + B.m + B.d));
+  const jit = () => Math.round((rng()*2 - 1) * 5);
+
+  /* ---------- 1. 生肖 ---------- */
+  let zs = 0, zTxt = '';
+  if (pairHas(LIUHE, za, zb)){
+    zs = 12; zTxt = `${SHENGXIAO[za]}与${SHENGXIAO[zb]}六合，情投意合`;
+  } else if (sanheHas(SANHE, za, zb)){
+    zs = 7;  zTxt = `${SHENGXIAO[za]}与${SHENGXIAO[zb]}三合，志趣相投`;
+  } else if (pairHas(CHONG, za, zb)){
+    zs = -14; zTxt = `${SHENGXIAO[za]}与${SHENGXIAO[zb]}相冲，易起争执`;
+  } else if (pairHas(HAI, za, zb)){
+    zs = -7; zTxt = `${SHENGXIAO[za]}与${SHENGXIAO[zb]}相害，易生误会`;
+  } else {
+    zs = 0;  zTxt = `${SHENGXIAO[za]}与${SHENGXIAO[zb]}无冲无合，属平稳之配`;
+  }
+
+  /* ---------- 2. 夫妻宫（日支） ---------- */
+  let ds = 0, dTxt = '';
+  if (pairHas(LIUHE, da, db)){
+    ds = 10; dTxt = `日支${ZHI[da]}${ZHI[db]}六合，夫妻宫相合`;
+  } else if (sanheHas(SANHE, da, db)){
+    ds = 5;  dTxt = `日支${ZHI[da]}${ZHI[db]}三合，夫妻宫协和`;
+  } else if (pairHas(CHONG, da, db)){
+    ds = -10; dTxt = `日支${ZHI[da]}${ZHI[db]}相冲，夫妻宫动荡`;
+  } else if (pairHas(HAI, da, db)){
+    ds = -5;  dTxt = `日支${ZHI[da]}${ZHI[db]}相害，夫妻宫欠安`;
+  } else {
+    ds = 0;  dTxt = `日支${ZHI[da]}与${ZHI[db]}无冲合，感情靠后天经营`;
+  }
+
+  /* ---------- 3. 日主五行 ---------- */
+  let ws = 0, wTxt = '';
+  if (wxA === wxB){
+    ws = 2; wTxt = `双方日主同属${wxA}，同气相求，性情相近`;
+  } else if (SHENG[wxA] === wxB){
+    ws = 9; wTxt = `甲方${wxA}生乙方${wxB}，一气相生，气场和顺`;
+  } else if (SHENG[wxB] === wxA){
+    ws = 9; wTxt = `乙方${wxB}生甲方${wxA}，一气相生，气场和顺`;
+  } else {
+    ws = -8; wTxt = `甲方${wxA}与乙方${wxB}相克，易有主导与退让之争`;
+  }
+
+  /* ---------- 4. 五行互补 ---------- */
+  const lackA = WX_LIST.filter(k => A.counts[k] === 0);
+  const lackB = WX_LIST.filter(k => B.counts[k] === 0);
+  let comp = 0; const compParts = [];
+  lackA.forEach(k => { if (B.counts[k] >= 2){ comp += 4; compParts.push(`甲缺${k}而得乙之${k}`); } });
+  lackB.forEach(k => { if (A.counts[k] >= 2){ comp += 4; compParts.push(`乙缺${k}而得甲之${k}`); } });
+  comp = Math.min(comp, 14);
+  const compTxt = compParts.length ? compParts.join('；') : '双方五行结构相近，互补性一般';
+
+  /* ---------- 5. 姓名灵数 ---------- */
+  const nA = nameNumber(A.name) + 1, nB = nameNumber(B.name) + 1;
+  const nd = Math.abs(nA - nB);
+  let ns = 0, nTxt = '';
+  if (nd === 0){ ns = 4; nTxt = `姓名灵数同为${nA}，同频共振`; }
+  else if (nd <= 2){ ns = 6; nTxt = `姓名灵数${nA}与${nB}相近，气息相投`; }
+  else if (nd === 4){ ns = -4; nTxt = `姓名灵数${nA}与${nB}相冲，偶有鸡同鸭讲之感`; }
+  else { ns = 0; nTxt = `姓名灵数${nA}与${nB}无特殊关联`; }
+
+  /* ---------- 6. 时柱（晚年/子女宫） ---------- */
+  let hs = 0, hTxt = '';
+  if (pairHas(LIUHE, ha, hb)){ hs = 6; hTxt = `时支${ZHI[ha]}${ZHI[hb]}六合，晚景同心`; }
+  else if (pairHas(CHONG, ha, hb)){ hs = -6; hTxt = `时支${ZHI[ha]}${ZHI[hb]}相冲，晚年宜多聚少离`; }
+  else { hs = 0; hTxt = `时支${ZHI[ha]}与${ZHI[hb]}平稳，晚年无大起伏`; }
+
+  /* ---------- 八维打分 ---------- */
+  const dims = [
+    { key:'character', label:'性格契合', icon:'🧭', score: 70 + zs*0.5 + ws*1.6 + jit() },
+    { key:'emotion',   label:'情感浓度', icon:'💗', score: 72 + ds*1.1 + zs*0.4 + jit() },
+    { key:'wealth',    label:'财运共济', icon:'💰', score: 68 + comp*1.1 + jit() },
+    { key:'career',    label:'事业互助', icon:'🏛', score: 70 + ws*1.2 + zs*0.3 + jit() },
+    { key:'family',    label:'家庭子女', icon:'🏡', score: 72 + hs*1.4 + ds*0.5 + jit() },
+    { key:'health',    label:'健康相守', icon:'🌿', score: 70 + comp*0.8 + jit() },
+    { key:'comm',      label:'沟通默契', icon:'💬', score: 70 + ns*1.5 + jit() },
+    { key:'lasting',   label:'长久稳定', icon:'🕊', score: 70 + zs*0.7 + ds*0.8 + ws*0.6 + hs*0.5 + jit() }
+  ];
+  dims.forEach(d => { d.score = clamp(Math.round(d.score), 25, 99); });
+
+  /* ---------- 加权总分 ---------- */
+  const W = { character:1.2, emotion:1.3, wealth:1.0, career:0.9,
+              family:1.0, health:0.8, comm:1.0, lasting:1.4 };
+  let sum = 0, wsum = 0;
+  dims.forEach(d => { sum += d.score * W[d.key]; wsum += W[d.key]; });
+  const score = clamp(Math.round(sum / wsum), 20, 99);
+
+  /* ---------- 标题 ---------- */
+  let title, sub;
+  if (score >= 90){ title='天 作 之 合'; sub='上上姻缘，前世修来，宜珍惜相守，白头偕老。'; }
+  else if (score >= 80){ title='上 等 姻 缘'; sub='佳偶天成，相互扶持，家道日隆，福泽绵长。'; }
+  else if (score >= 70){ title='良 缘 可 期'; sub='感情笃厚，小有摩擦，彼此包容则百年好合。'; }
+  else if (score >= 60){ title='中 平 之 配'; sub='缘分尚可，需靠后天用心经营，方能琴瑟和鸣。'; }
+  else if (score >= 50){ title='需 多 磨 合'; sub='性格差异较大，若能互相退让、以诚相待，仍可长久。'; }
+  else { title='缘 分 浅 薄'; sub='二者命局多有冲克，相处易生波澜，宜三思而后行。'; }
+
+  /* ---------- 命理依据 ---------- */
+  const basis = [
+    { t:'生肖', d: zTxt },
+    { t:'夫妻宫', d: dTxt },
+    { t:'日主', d: wTxt },
+    { t:'五行', d: compTxt },
+    { t:'时柱', d: hTxt },
+    { t:'姓名', d: nTxt }
+  ];
+
+  /* ---------- 短板建议 ---------- */
+  const sorted = [...dims].sort((a,b)=>a.score-b.score);
+  const weak = sorted.slice(0,2);
+
+  return { score, title, sub, dims, basis, weak };
+}
+
+/* =========================================================
+   雷达图
+   ========================================================= */
+function drawRadar(canvas, dims){
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const W = 340, H = 340;
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  canvas.width = W * dpr;
+  canvas.height = H * dpr;
+  canvas.style.width = W + 'px';
+  canvas.style.height = H + 'px';
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, W, H);
+
+  const cx = W/2, cy = H/2, R = 108;
+  const n = dims.length;
+  const ang = i => -Math.PI/2 + i * 2*Math.PI/n;
+  const pt = (i, r) => [cx + Math.cos(ang(i))*r, cy + Math.sin(ang(i))*r];
+
+  // 网格环
+  for (let ring = 1; ring <= 4; ring++){
+    const r = R * ring / 4;
+    ctx.beginPath();
+    for (let i = 0; i < n; i++){
+      const [x,y] = pt(i, r);
+      i ? ctx.lineTo(x,y) : ctx.moveTo(x,y);
+    }
+    ctx.closePath();
+    ctx.strokeStyle = ring === 4 ? 'rgba(216,185,105,0.34)' : 'rgba(216,185,105,0.13)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+
+  // 轴线
+  ctx.strokeStyle = 'rgba(216,185,105,0.16)';
+  for (let i = 0; i < n; i++){
+    const [x,y] = pt(i, R);
+    ctx.beginPath(); ctx.moveTo(cx,cy); ctx.lineTo(x,y); ctx.stroke();
+  }
+
+  // 数据面
+  ctx.beginPath();
+  dims.forEach((d,i)=>{
+    const r = R * clamp(d.score,0,100)/100;
+    const [x,y] = pt(i, r);
+    i ? ctx.lineTo(x,y) : ctx.moveTo(x,y);
+  });
+  ctx.closePath();
+  ctx.fillStyle = 'rgba(216,185,105,0.20)';
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(240,214,143,0.85)';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // 数据点
+  dims.forEach((d,i)=>{
+    const r = R * clamp(d.score,0,100)/100;
+    const [x,y] = pt(i, r);
+    ctx.beginPath();
+    ctx.arc(x,y,3.2,0,Math.PI*2);
+    ctx.fillStyle = '#f0d68f';
+    ctx.fill();
+  });
+
+  // 标签
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  dims.forEach((d,i)=>{
+    const [x,y] = pt(i, R + 26);
+    ctx.font = '11px "PingFang SC","Microsoft YaHei",sans-serif';
+    ctx.fillStyle = 'rgba(205,201,186,0.92)';
+    ctx.fillText(d.label, x, y - 7);
+    ctx.font = 'bold 10px "PingFang SC",sans-serif';
+    ctx.fillStyle = 'rgba(240,214,143,0.95)';
+    ctx.fillText(d.score + '', x, y + 7);
+  });
+}
+
+/* =========================================================
+   渲染：合婚
+   ========================================================= */
+function renderPair(A, B, res){
+  const mkPillars = (o)=>{
+    const bz = o.bz;
+    const ps = [
+      {label:'年', g:bz.yGan, z:bz.yZhi},
+      {label:'月', g:bz.mGan, z:bz.mZhi},
+      {label:'日', g:bz.dGan, z:bz.dZhi},
+      {label:'时', g:bz.hGan, z:bz.hz}
+    ];
+    return ps.map(p=>`<div class="pillar" style="padding:10px 2px 8px">
+      <div class="p-label">${p.label}</div>
+      <div class="p-gan" style="font-size:19px;color:${WX_COLOR[GAN_WX[p.g]]}">${GAN[p.g]}</div>
+      <div class="p-zhi" style="font-size:19px;color:${WX_COLOR[ZHI_WX[p.z]]}">${ZHI[p.z]}</div>
+    </div>`).join('');
+  };
+
+  const hue = Math.round(clamp(res.score,30,100) * 1.15);
+
+  const dimsHTML = res.dims.map(d => {
+    const t = tierOf(d.score);
+    return `<div class="score-card">
+      <div class="score-head">
+        <span class="nm"><em>${d.icon}</em>${d.label}<span class="badge" style="margin-left:10px">${TIER_NAME[t]}</span></span>
+        <span class="val" style="color:${tierColor(d.score)}">${d.score}<small>分</small></span>
+      </div>
+      <div class="bar"><div class="bar-fill" style="width:${d.score}%;background:${scoreColor(d.score)}"></div></div>
+      <p class="score-text">${PAIR_TEXT[d.key][t]}</p>
+    </div>`;
+  }).join('');
+
+  const basisHTML = res.basis.map(b =>
+    `<div class="basis-item"><b>${b.t}</b>${b.d}</div>`
+  ).join('');
+
+  const adviceHTML = `综上，二人的姻缘成色为「<b>${res.title.replace(/ /g,'')}</b>」。
+    相处中最值得留心的是「<b>${res.weak[0].label}</b>」与「<b>${res.weak[1].label}</b>」——
+    ${PAIR_ADVICE[res.weak[0].key]}${PAIR_ADVICE[res.weak[1].key]}
+    命理只定基调，姻缘终靠经营，愿二位同心同德，共赴长久。`;
+
+  document.getElementById('p-result').innerHTML = `
+    <div class="pair-result">
+      <div class="big-score" style="background:linear-gradient(180deg,hsl(${hue},82%,82%),hsl(${hue},70%,52%) 62%,hsl(${hue},58%,30%));-webkit-background-clip:text;background-clip:text;">${res.score}<small>分</small></div>
+      <div class="pair-title">${res.title}</div>
+      <p class="pair-sub">${res.sub}</p>
+
+      <div class="radar-wrap"><canvas id="pair-radar"></canvas></div>
+
+      <div class="pair-people">
+        <div>
+          <div class="person-name">${A.name} <span class="badge">${A.gender}</span></div>
+          <div class="pillars" style="grid-template-columns:repeat(4,1fr);gap:6px">${mkPillars(A)}</div>
+          <div class="person-meta">生肖 ${A.zodiac} · ${A.constellation}<br>日主 ${A.dayMaster} · ${A.shichen}</div>
+        </div>
+        <div>
+          <div class="person-name">${B.name} <span class="badge">${B.gender}</span></div>
+          <div class="pillars" style="grid-template-columns:repeat(4,1fr);gap:6px">${mkPillars(B)}</div>
+          <div class="person-meta">生肖 ${B.zodiac} · ${B.constellation}<br>日主 ${B.dayMaster} · ${B.shichen}</div>
+        </div>
+      </div>
+
+      <div class="pair-dims">
+        <h3 class="sec-title">八 维 命 理 解 读</h3>
+        ${dimsHTML}
+
+        <h3 class="sec-title">命 理 依 据</h3>
+        <div class="basis-list">${basisHTML}</div>
+
+        <div class="advice">${adviceHTML}</div>
+      </div>
+    </div>
+  `;
+
+  requestAnimationFrame(()=>{
+    drawRadar(document.getElementById('pair-radar'), res.dims);
+  });
+}
+
+/* =========================================================
+   事件
+   ========================================================= */
+function fillShichen(sel){
+  sel.innerHTML = SHICHEN_OPTS.map(o => `<option value="${o[1]}">${o[0]}</option>`).join('');
+  sel.value = 11;
+}
+
+function readInput(nameEl, genderEl, dateEl, hourEl){
+  const name = nameEl.value.trim();
+  const date = dateEl.value;
+  if (!name) return { err:'请填写姓名' };
+  if (!date) return { err:'请选择出生日期' };
+  const parts = date.split('-').map(Number);
+  const y = parts[0], m = parts[1], d = parts[2];
+  if (y < 1900 || y > 2100) return { err:'出生年份需在 1900 - 2100 之间' };
+  const h = Number(hourEl.value);
+  const gender = genderEl.value;
+  const bz = computeBaZi(y, m, d, h);
+  const counts = countWuXing(bz);
+  return {
+    name, gender, y, m, d, h, bz, counts,
+    zodiac: SHENGXIAO[bz.yZhi],
+    constellation: getConstellation(m, d),
+    shichen: SHICHEN[bz.hz],
+    dayMaster: GAN[bz.dGan] + GAN_WX[bz.dGan]
+  };
+}
+
+(function init(){
+  // 星空
+  const box = document.getElementById('stars');
+  let html = '';
+  for (let i = 0; i < 110; i++){
+    const size = (Math.random() * 1.8 + 0.5).toFixed(2);
+    const x = (Math.random() * 100).toFixed(2);
+    const y = (Math.random() * 100).toFixed(2);
+    const delay = (Math.random() * 4).toFixed(2);
+    const dur = (2.4 + Math.random() * 3).toFixed(2);
+    html += `<i style="left:${x}%;top:${y}%;width:${size}px;height:${size}px;animation-delay:${delay}s;animation-duration:${dur}s"></i>`;
+  }
+  box.innerHTML = html;
+
+  ['s-hour','a-hour','b-hour'].forEach(id => fillShichen(document.getElementById(id)));
+
+  const def = new Date();
+  def.setFullYear(def.getFullYear() - 25);
+  const ds = def.getFullYear() + '-' + two(def.getMonth()+1) + '-' + two(def.getDate());
+  ['s-date','a-date','b-date'].forEach(id => { document.getElementById(id).value = ds; });
+
+  document.querySelectorAll('.tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+      tab.classList.add('active');
+      document.getElementById('panel-' + tab.dataset.tab).classList.add('active');
+    });
+  });
+
+  // 单人
+  document.getElementById('s-go').addEventListener('click', () => {
+    const r = readInput(
+      document.getElementById('s-name'),
+      document.getElementById('s-gender'),
+      document.getElementById('s-date'),
+      document.getElementById('s-hour')
+    );
+    if (r.err){
+      document.getElementById('s-result').innerHTML = `<div class="err">⚠ ${r.err}</div>`;
+      return;
+    }
+    renderSingle(analyzeSingle(r.name, r.gender, r.y, r.m, r.d, r.h));
+    document.getElementById('s-result').scrollIntoView({ behavior:'smooth', block:'nearest' });
+  });
+
+  // 合婚
+  document.getElementById('p-go').addEventListener('click', () => {
+    const A = readInput(
+      document.getElementById('a-name'),
+      document.getElementById('a-gender'),
+      document.getElementById('a-date'),
+      document.getElementById('a-hour')
+    );
+    if (A.err){
+      document.getElementById('p-result').innerHTML = `<div class="err">⚠ 甲方：${A.err}</div>`;
+      return;
+    }
+    const B = readInput(
+      document.getElementById('b-name'),
+      document.getElementById('b-gender'),
+      document.getElementById('b-date'),
+      document.getElementById('b-hour')
+    );
+    if (B.err){
+      document.getElementById('p-result').innerHTML = `<div class="err">⚠ 乙方：${B.err}</div>`;
+      return;
+    }
+    renderPair(A, B, calcPair(A, B));
+    document.getElementById('p-result').scrollIntoView({ behavior:'smooth', block:'nearest' });
+  });
+
+  // 窗口尺寸变化时重绘雷达图
+  let rt = null;
+  window.addEventListener('resize', () => {
+    clearTimeout(rt);
+    rt = setTimeout(() => {
+      const cv = document.getElementById('pair-radar');
+      if (cv && window.__lastPair) drawRadar(cv, window.__lastPair);
+    }, 180);
+  });
+})();
+</script>
+</body>
+</html>
